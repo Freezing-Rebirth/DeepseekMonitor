@@ -1,0 +1,117 @@
+<!DOCTYPE html><html lang="en" style=""><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>DeepSeek 400x300 RLCD - Peak (Today Next Switch)</title>
+<!-- BEGIN: Google Font Silkscreen -->
+<link href="https://fonts.googleapis.com" rel="preconnect">
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
+<link href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&amp;display=swap" rel="stylesheet">
+<!-- END: Google Font Silkscreen -->
+<!-- BEGIN: Tailwind CSS v3 CDN -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- END: Tailwind CSS v3 CDN -->
+<!-- BEGIN: Custom Monochrome RLCD Styles -->
+<style data-purpose="monochrome-pixel-rendering">
+    * {
+      box-sizing: border-box;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-font-smoothing: none;
+      -moz-osx-font-smoothing: unset;
+      font-smooth: never;
+      text-rendering: geometricPrecision;
+      image-rendering: pixelated;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #d6dbdf;
+      font-family: 'Silkscreen', monospace;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Fixed hardware canvas 400x300 */
+    .screen-canvas {
+      width: 400px;
+      height: 300px;
+      min-width: 400px;
+      min-height: 300px;
+      max-width: 400px;
+      max-height: 300px;
+      background-color: #ffffff;
+      color: #000000;
+      border: none;
+      outline: none;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    .dotted-line {
+      border-bottom: 1px dotted #000000;
+      width: 100%;
+      height: 1px;
+    }
+
+    .divider-solid-thick {
+      border-bottom: 2px solid #000000;
+    }
+  </style>
+<!-- END: Custom Monochrome RLCD Styles -->
+</head>
+<body class="bg-[#d6dbdf] min-h-screen flex items-center justify-center p-0 m-0">
+<!-- BEGIN: DisplayWrapper -->
+<!-- Target physical hardware display: 400x300 Monochrome RLCD -->
+<main class="screen-canvas bg-white text-black" data-purpose="rlcd-viewport">
+<!-- BEGIN: TopStatusBar -->
+<header class="h-[26px] min-h-[26px] w-full px-2.5 flex items-center justify-between border-b border-black text-[9px] font-bold tracking-tight select-none bg-white shrink-0" data-purpose="system-status-bar">
+<!-- Device/System Branding -->
+<div class="flex items-center space-x-1.5">
+<span class="inline-block w-2 h-2 bg-black leading-none"></span>
+<span class="tracking-wide lowercase">deepseek</span>
+</div>
+<!-- Hardware Telemetry -->
+<div class="tracking-tighter"><span class="">WIFI:OK</span><span class="ml-2">BAT:94%</span><span class="ml-2">04:15 UTC</span></div>
+</header>
+<!-- END: TopStatusBar -->
+<!-- BEGIN: BalanceAndRunwaySection (124px Unified) -->
+<section class="h-[124px] min-h-[124px] w-full px-3 pt-2 pb-1.5 flex flex-col justify-between divider-solid-thick bg-white text-black shrink-0" data-purpose="balance-telemetry-panel"><!-- Line 1: Header + Runway top right -->
+<div class="flex items-center justify-between leading-none">
+  <span class="text-[9px] font-bold tracking-wider uppercase">TOTAL AVAILABLE FUNDS</span>
+  <span class="text-[9px] font-bold tracking-tight uppercase">RUNWAY: 38D</span>
+</div>
+<!-- Line 2: Main Balance & Tokens right-aligned -->
+<div class="flex items-baseline justify-between py-0.5 leading-none">
+  <span class="text-[24px] font-bold tracking-normal leading-none">¥148.52</span>
+  <span class="text-[10px] font-bold tracking-tight uppercase">≈1.06B TOKENS</span>
+</div>
+<!-- Line 3: Dotted Separation Line -->
+<div class="dotted-line my-0.5"></div>
+<!-- Line 4: Basis explanation & Burn rate -->
+<div class="flex items-center justify-between text-[8px] font-bold tracking-tight pb-0.5 leading-none uppercase">
+  <div class="">*BASIS: V3 IN-CACHE ¥0.14/M</div>
+  <div class="">BURN: ¥3.86/D</div>
+</div></section>
+<!-- END: BalanceAndRunwaySection -->
+<!-- BEGIN: BottomHalfStatePanel (PEAK Today - 150px) -->
+<section class="flex-1 w-full bg-white text-black flex flex-col items-center justify-center text-center select-none" data-purpose="pricing-state-panel">
+<!-- Primary Status Label -->
+<h1 class="text-[36px] font-bold leading-none tracking-widest uppercase mb-2.5">
+  PEAK
+</h1>
+<!-- Today format: date omitted, only switch time -->
+<div class="text-[11px] font-bold tracking-widest uppercase leading-none">
+  NEXT -&gt; 16:30
+</div>
+</section>
+<!-- END: BottomHalfStatePanel -->
+</main>
+<!-- END: DisplayWrapper -->
+
+
+</body></html>

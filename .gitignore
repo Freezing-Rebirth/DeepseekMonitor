@@ -1,0 +1,31 @@
+# ---------------------------------------------------------------------------
+# Build output
+# ---------------------------------------------------------------------------
+build/
+*.bin
+*.elf
+*.map
+sdkconfig.old
+
+# ESP-IDF managed components are re-fetched by the component manager, so they are
+# not committed. Run `idf.py build` once to download them.
+managed_components/
+dependencies.lock
+
+# ---------------------------------------------------------------------------
+# Research scratch space - not part of the published project
+#
+# Holds vendored third-party trees (LVGL, the vendor board repository), local
+# capture logs, and the throwaway patch scripts used while developing the fonts.
+# None of it is needed to build or use the firmware.
+# ---------------------------------------------------------------------------
+_research/
+
+# ---------------------------------------------------------------------------
+# Editor / OS noise
+# ---------------------------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+desktop.ini

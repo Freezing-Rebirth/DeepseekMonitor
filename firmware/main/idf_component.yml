@@ -1,0 +1,13 @@
+## DeepSeek Monitor - main component dependencies.
+##
+## Downloaded by the ESP-IDF component manager on first build; after that the
+## local cache lets the build resolve offline.
+dependencies:
+  idf:
+    version: '>=5.4.0'
+  ## Graphics library driving the 400x300 1bpp ST7305 panel.
+  lvgl/lvgl:
+    version: '~9.5.0'
+  ## Parses the DeepSeek /user/balance response.
+  espressif/cjson:
+    version: '^1.7.19'

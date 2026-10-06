@@ -1,0 +1,15 @@
+# Normalise line endings to LF in the repository.
+#
+# Without this, Git converts the design exports to CRLF on checkout, which modifies
+# files that were authored with LF endings and makes every diff look rewritable.
+* text=auto eol=lf
+
+# Binary assets: never touch these.
+*.png binary
+*.jpg binary
+*.bin binary
+*.zip binary
+
+# Generated 1 bpp font tables: large, and their contents are not meant to be read
+# as prose, but they are text and diff usefully when a size changes.
+firmware/main/fonts/*.c text eol=lf

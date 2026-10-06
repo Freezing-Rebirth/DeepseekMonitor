@@ -1,0 +1,87 @@
+<!DOCTYPE html><html lang="en" style=""><head>
+<meta charset="utf-8">
+<meta content="width=400, initial-scale=1.0" name="viewport">
+<title>DeepSeek 400x300 RLCD - Trough (Next Day Switch)</title>
+<!-- Google Fonts: Silkscreen -->
+<link href="https://fonts.googleapis.com" rel="preconnect">
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
+<link href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&amp;display=swap" rel="stylesheet">
+<!-- Tailwind CSS v3 CDN with forms and container queries -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- BEGIN: Custom Font & Pixel Rendering Styles -->
+<style data-purpose="pixel-rendering">
+    * {
+      box-sizing: border-box;
+      user-select: none;
+      -webkit-user-select: none;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: #e5e7eb;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      font-family: 'Silkscreen', monospace;
+      -webkit-font-smoothing: none;
+      -moz-osx-font-smoothing: unset;
+      font-smooth: never;
+      text-rendering: geometricPrecision;
+      image-rendering: pixelated;
+    }
+
+    /* Fixed size hardware container: 400x300 exact */
+    .rlcd-screen {
+      width: 400px;
+      height: 300px;
+      max-width: 400px;
+      max-height: 300px;
+      min-width: 400px;
+      min-height: 300px;
+      background-color: #ffffff;
+      color: #000000;
+      overflow: hidden;
+      position: relative;
+      border: none;
+      outline: none;
+    }
+
+    /* Crisp dotted divider for 1-bit monochrome display */
+    .dotted-sep {
+      border: none;
+      border-top: 1px dotted #000000;
+      height: 0;
+      line-height: 0;
+    }
+  </style>
+<!-- END: Custom Font & Pixel Rendering Styles -->
+</head>
+<body>
+<!-- BEGIN: MainScreenContainer -->
+<!-- Target physical hardware display: 400x300 Monochrome RLCD -->
+<main class="rlcd-screen flex flex-col justify-between" data-purpose="rlcd-display-frame">
+<!-- BEGIN: TopStatusBar -->
+<!-- Status bar with telemetry, system title, and network indicators -->
+<header class="w-full h-[26px] bg-white text-black px-2 flex items-center justify-between border-b border-black text-[10px] tracking-tight shrink-0" data-purpose="status-bar"><div class="flex items-center gap-1.5 font-bold"><span class="inline-block w-2 h-2 bg-black"></span><span class="leading-none uppercase">DEEPSEEK</span></div><div class="flex items-center gap-2 text-[9px] leading-none"><span class="">WIFI:OK</span><span class="">BAT:94%</span><span class="">04:15 UTC</span></div></header>
+<!-- END: TopStatusBar -->
+<!-- BEGIN: BalanceAndRunwaySection -->
+<!-- Top unified section: Account Balance & Operational Runway -->
+<section class="w-full h-[124px] bg-white text-black px-3.5 pt-2.5 pb-2 flex flex-col justify-between shrink-0 border-b-2 border-black" data-purpose="balance-and-runway"><div class="flex items-center justify-between leading-none"><span class="text-[10px] tracking-wider uppercase">TOTAL AVAILABLE FUNDS</span><span class="text-[10px] font-bold tracking-tight">RUNWAY: 38D</span></div><div class="flex items-baseline justify-between py-0.5"><div class="text-[23px] font-bold tracking-wide leading-none text-black">¥148.52</div><div class="text-[11px] font-bold tracking-tight text-right">≈1.06B TOKENS</div></div><div class="dotted-sep w-full my-0.5"></div><div class="flex items-center justify-between text-[8px] leading-none tracking-tight"><span class="text-black opacity-90">*BASIS: V3 IN-CACHE ¥0.14/M</span><span class="font-bold">BURN: ¥3.86/D</span></div></section>
+<!-- END: BalanceAndRunwaySection -->
+<!-- BEGIN: PricingStateSection -->
+<!-- Bottom inverted section: Trough Pricing Mode (Next-Day Transition) -->
+<section class="w-full flex-1 bg-black text-white px-4 flex flex-col items-center justify-center text-center shrink-0" data-purpose="pricing-state-trough"><h1 class="text-[34px] font-bold tracking-widest leading-tight uppercase text-white mb-1">TROUGH</h1><div class="flex items-center justify-center gap-1.5 text-[11px] tracking-wider text-white"><span class="opacity-90">NEXT -&gt;</span><span class="font-bold">05-21 08:30</span></div></section>
+<!-- END: PricingStateSection -->
+</main>
+<!-- END: MainScreenContainer -->
+
+
+
+
+
+
+
+
+</body></html>

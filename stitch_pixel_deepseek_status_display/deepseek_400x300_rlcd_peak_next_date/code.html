@@ -1,0 +1,110 @@
+<!DOCTYPE html><html lang="en" style=""><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>DeepSeek 400x300 RLCD - Peak (Next Day Switch)</title>
+<!-- Google Fonts: Silkscreen -->
+<link href="https://fonts.googleapis.com" rel="preconnect">
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
+<link href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&amp;display=swap" rel="stylesheet">
+<!-- Tailwind CSS v3 CDN -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- BEGIN: StyleConfigurations -->
+<style data-purpose="typography">
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #e5e7eb;
+      font-family: 'Silkscreen', monospace;
+      -webkit-font-smoothing: none;
+      -moz-osx-font-smoothing: unset;
+      font-smooth: never;
+      text-rendering: geometricPrecision;
+      image-rendering: pixelated;
+    }
+  </style>
+<style data-purpose="rlcd-layout">
+    /* Exact physical canvas dimensions for ESP32 RLCD screen */
+    .screen-canvas {
+      width: 400px;
+      height: 300px;
+      background-color: #ffffff;
+      color: #000000;
+      border: none;
+      outline: none;
+      box-sizing: border-box;
+      overflow: hidden;
+    }
+    
+    .divider-dotted {
+      border-bottom: 1px dotted #000000;
+    }
+
+    .divider-solid-thick {
+      border-bottom: 2px solid #000000;
+    }
+  </style>
+<!-- END: StyleConfigurations -->
+</head>
+<body class="flex items-center justify-center min-h-screen">
+<!-- BEGIN: DisplayWrapper -->
+<!-- Strict 400x300 pixel container representing the target 1-bit monochrome display -->
+<main class="screen-canvas flex flex-col select-none" data-purpose="rlcd-viewport">
+<!-- BEGIN: StatusBar -->
+<!-- Top status bar with hardware telemetry -->
+<header class="h-[26px] min-h-[26px] px-2 flex items-center justify-between border-b border-black text-[9px] font-bold tracking-tight" data-purpose="system-status-bar"><!-- Device identity -->
+<div class="flex items-center space-x-1.5">
+<span class="inline-block w-2 h-2 bg-black"></span>
+<span class="tracking-wide">DEEPSEEK</span>
+</div>
+<!-- Telemetry indicators -->
+<div class="tracking-tighter"><span class="">WIFI:OK</span>
+<span class="ml-2">BAT:94%</span>
+<span class="ml-2">04:15 UTC</span></div></header>
+<!-- END: StatusBar -->
+<!-- BEGIN: TopHalfBalanceRunway -->
+<!-- Unified balance and burn telemetry section -->
+<section class="h-[124px] min-h-[124px] px-3 pt-2 pb-1.5 flex flex-col justify-between divider-solid-thick bg-white text-black" data-purpose="balance-telemetry-panel"><!-- Line 1: Header & Runway -->
+<div class="flex items-center justify-between leading-none">
+  <span class="text-[9px] font-bold tracking-wider">TOTAL AVAILABLE FUNDS</span>
+  <span class="text-[9px] font-bold tracking-tight">RUNWAY: 38D</span>
+</div>
+
+<!-- Line 2: Main Balance & Tokens -->
+<div class="flex items-baseline justify-between py-0.5 leading-none">
+  <span class="text-[24px] font-bold tracking-normal leading-none">¥148.52</span>
+  <span class="text-[9px] font-bold tracking-tight">≈1.06B TOKENS</span>
+</div>
+
+<!-- Line 3: Dotted Separation Line -->
+<div class="divider-dotted w-full my-0.5"></div>
+
+<!-- Line 4: Basis on left & Daily Burn on right -->
+<div class="flex items-center justify-between text-[8px] font-bold tracking-tight pb-0.5 leading-none">
+  <div class="">*BASIS: V3 IN-CACHE ¥0.14/M</div>
+  <div class="text-[9px]">BURN: ¥3.86/D</div>
+</div></section>
+<!-- END: TopHalfBalanceRunway -->
+<!-- BEGIN: BottomHalfStatePanel -->
+<!-- Pricing State Display - PEAK with Next Day Transition -->
+<section class="flex-1 flex flex-col items-center justify-center bg-white text-black text-center" data-purpose="pricing-state-panel">
+<!-- Peak State Identifier -->
+<h1 class="text-[36px] font-bold leading-none tracking-wider mb-2">
+        PEAK
+      </h1>
+<!-- Next Day Switch Timestamp Schedule -->
+<div class="text-[11px] font-bold tracking-normal uppercase">
+        NEXT: 05-21 00:30
+      </div>
+</section>
+<!-- END: BottomHalfStatePanel -->
+</main>
+<!-- END: DisplayWrapper -->
+
+
+
+
+
+
+
+
+</body></html>

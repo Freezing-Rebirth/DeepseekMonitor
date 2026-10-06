@@ -1,0 +1,107 @@
+<!DOCTYPE html><html lang="en" style=""><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>DeepSeek 400x300 RLCD - Trough (Today Switch)</title>
+<!-- BEGIN: Google Font Silkscreen -->
+<link href="https://fonts.googleapis.com" rel="preconnect">
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
+<link href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&amp;display=swap" rel="stylesheet">
+<!-- END: Google Font Silkscreen -->
+<!-- BEGIN: Tailwind CSS v3 -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- END: Tailwind CSS v3 -->
+<!-- BEGIN: Custom Monochrome RLCD Styles -->
+<style data-purpose="monochrome-pixel-rendering">
+    /* Global pixel-perfect rendering for 1-bit LCD */
+    * {
+      box-sizing: border-box;
+      -webkit-font-smoothing: none;
+      -moz-osx-font-smoothing: unset;
+      font-smooth: never;
+      text-rendering: geometricPrecision;
+      image-rendering: pixelated;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #e5e5e5;
+      font-family: 'Silkscreen', monospace;
+    }
+
+    .rlcd-screen {
+      width: 400px;
+      height: 300px;
+      background-color: #ffffff;
+      color: #000000;
+      border: none;
+      outline: none;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    /* Crisp dotted horizontal divider */
+    .dotted-line {
+      border-bottom: 1px dotted #000000;
+      height: 1px;
+      width: 100%;
+    }
+  </style>
+<!-- END: Custom Monochrome RLCD Styles -->
+</head>
+<body class="flex items-center justify-center min-h-screen">
+<!-- BEGIN: RLCD Display Container (400x300 Exact) -->
+<main class="rlcd-screen" data-purpose="400x300-rlcd-display" id="screen-container">
+<!-- BEGIN: Top StatusBar -->
+<header class="h-[26px] min-h-[26px] w-full px-2.5 flex items-center justify-between border-b border-black text-[10px] leading-none select-none bg-white">
+<!-- Device/System Title -->
+<div class="flex items-center gap-1.5 font-bold tracking-tight" data-purpose="status-title">
+<span class="inline-block text-[9px] leading-none mb-0.5">■</span>
+<span class="">deepseek</span>
+</div>
+<!-- Telemetry indicators -->
+<div class="text-[9px] font-normal tracking-tighter" data-purpose="status-indicators">
+        WIFI:OK&nbsp;&nbsp;BAT:94%&nbsp;&nbsp;04:15 UTC
+      </div>
+</header>
+<!-- END: Top StatusBar -->
+<!-- BEGIN: Top Half Section (Balance & Runway - 124px Unified) -->
+<section class="h-[124px] min-h-[124px] w-full px-3 py-2 flex flex-col justify-between bg-white text-black border-b-2 border-black" data-purpose="balance-runway-module"><!-- Top Sub-Row: Section Label -->
+<div class="flex items-center justify-between text-[10px] leading-none">
+<span class="tracking-wide font-normal">TOTAL AVAILABLE FUNDS</span>
+<span class="text-[9px] font-normal tracking-tight">RUNWAY: 38D</span>
+</div>
+<!-- Main Balance & Equivalent Tokens Row -->
+<div class="flex items-baseline justify-between py-0.5" data-purpose="balance-value">
+<span class="text-[23px] font-bold leading-none tracking-normal">¥148.52</span>
+<span class="text-[10px] font-bold leading-none tracking-tight" data-purpose="token-balance">≈1.06B TOKENS</span>
+</div>
+<!-- 1-Bit Dotted Line Divider -->
+<div class="dotted-line my-0.5"></div>
+<!-- Bottom Metric & Conversion Explanation Sub-note -->
+<div class="flex items-center justify-between text-[9px] leading-none tracking-tight font-normal pb-0.5" data-purpose="runway-metrics">
+<span class="">*BASIS: V3 IN-CACHE ¥0.14/M</span>
+<span class="">BURN: ¥3.86/D</span>
+</div></section>
+<!-- END: Top Half Section -->
+<!-- BEGIN: Bottom Half Section (Pricing State Tab - TROUGH Today - 150px) -->
+<section class="h-[150px] flex-1 w-full bg-black text-white flex flex-col items-center justify-center select-none" data-purpose="pricing-state-module">
+<!-- Main State Heading -->
+<h1 class="text-[34px] font-bold tracking-wider leading-none m-0 p-0 text-white" data-purpose="rate-status">
+        TROUGH
+      </h1>
+<!-- Next Switch Time (Today format: date omitted) -->
+<div class="mt-3.5 text-[11px] tracking-widest text-white leading-none font-normal" data-purpose="next-switch-time">
+        NEXT -&gt; 08:30
+      </div>
+</section>
+<!-- END: Bottom Half Section -->
+</main>
+<!-- END: RLCD Display Container -->
+
+
+
+
+</body></html>
