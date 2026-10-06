@@ -30,6 +30,7 @@
 #include "deepseek_api.h"
 #include "frame_dump.h"
 #include "pricing.h"
+#include "debug_config.h"
 #include "pricing_selftest.h"
 #include "selftest.h"
 #include "ui.h"
@@ -456,9 +457,12 @@ extern "C" void app_main(void)
             s_offline_since = 0;
         }
 
-        // Heartbeat: proves the LVGL task and the main loop are both alive.
+        // Heartbeat: with DEBUG_LOGS on this proves the LVGL task and the main loop
+        // are both alive and shows the countdowns; otherwise it only advances the
+        // timer.
         if ((xTaskGetTickCount() - last_hb) >= pdMS_TO_TICKS(30000)) {
             last_hb = xTaskGetTickCount();
+#if DEBUG_LOGS
             const wifi_status_t w = wifi_get_status();
             // The countdowns are logged with the heartbeat so the refresh schedule
             // can be watched directly instead of inferred from the panel.
@@ -470,6 +474,7 @@ extern "C" void app_main(void)
                      (int)w.connected, w.ip, (int)w.rssi,
                      (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
                      (unsigned)to_api, (unsigned)to_ui);
+#endif
         }
 
         price_state_t now_state = last_price_state;
@@ -496,10 +501,12 @@ extern "C" void app_main(void)
 
         if (api_due) {
             last_api = xTaskGetTickCount();
+#if DEBUG_LOGS
             // The cadence is logged so the configured interval can be confirmed
             // against the ledger's sample spacing.
             ESP_LOGI(TAG, "polling balance (interval %u s)",
                      (unsigned)(APP_BALANCE_POLL_MS / 1000));
+#endif
             if (wifi_get_status().connected) {
                 if (!clock_is_synced()) clock_sync_sntp(10000);
                 poll_balance();
@@ -532,9 +539,14 @@ extern "C" void app_main(void)
             ui_set_heartbeat(true);
             lvgl_unlock();
 
-            // Battery diagnostics: one line per repaint, so the ADC reading can be
-            // watched over time rather than inferred from the panel.
-            if (bat.valid) {
+            // Battery diagnostics: one line per repaint when DEBUG_LOGS is on, so the
+            // ADC reading can be watched over time rather than inferred from the
+            // panel. A failed read is always reported - that is an event, not noise.
+            if (!bat.valid) {
+                ESP_LOGW(TAG, "battery read failed");
+            }
+#if DEBUG_LOGS
+            else {
                 ESP_LOGI(TAG, "battery %.3f V -> %d%%", (double)bat.volts, bat.percent);
 #if BATTERY_REPORT_RAW
                 // Everything needed to fit the divider ratio and the discharge
@@ -544,18 +556,16 @@ extern "C" void app_main(void)
                 ESP_LOGI(TAG, "  raw=%d counts, pin=%d mV, divider=%d -> cell=%.3f V",
                          bat.raw, bat.pin_mv, (int)BAT_DIVIDER, (double)bat.volts);
 #endif
-            } else {
-                ESP_LOGW(TAG, "battery read failed");
             }
-
-            // Blink the header mark so a live screen is distinguishable from a
-            // frozen one without a serial console. (Done inside the lock above.)
+#endif
 
             if (state_changed) {
                 ESP_LOGI(TAG, "tariff state -> %s (repaint forced)", pricing_state_name(now_state));
             }
+#if DEBUG_LOGS
             ESP_LOGI(TAG, "ui refreshed, free PSRAM %u",
                      (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+#endif
         }
     }
 #endif

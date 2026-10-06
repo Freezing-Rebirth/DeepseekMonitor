@@ -1,4 +1,5 @@
 #include "usage_ledger.h"
+#include "debug_config.h"
 
 #include <string.h>
 #include <math.h>
@@ -181,13 +182,16 @@ ledger_stats_t ledger_stats(float current_balance_cny, int64_t unix_ts)
     const double spent  = (double)cf_to_cny(s_spent_cf);
     const int64_t window = (int64_t)s_elapsed;
 
-    // One line per new reading, so "not enough history" (window too small) can be
-    // told apart from "no spend at all" (spent is zero).
+    // One line per new reading, gated like the rest of the periodic diagnostics in
+    // main.cpp: it is what tells "not enough history" (window too small) apart from
+    // "no spend at all" (spent is zero), but it is noise once the panel is working.
     if (unix_ts != s_last_diag_ts) {
         s_last_diag_ts = unix_ts;
+#if DEBUG_LOGS
         ESP_LOGI(TAG, "stats: count=%u window=%llds spent=%.4f current=%.2f",
                  (unsigned)s_count, (long long)window, spent,
                  (double)current_balance_cny);
+#endif
     }
 
     if (window < LEDGER_MIN_WINDOW_SEC || spent <= 0.0) {

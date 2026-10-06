@@ -273,14 +273,23 @@ are `const` and cannot be modified in place.
 
 ## Development aids
 
-Three compile-time switches at the top of `main/main.cpp`, all `0` in a release build:
+The switches live in `main/debug_config.h`, in one place so every translation unit
+agrees — a `#define` is per unit, and `usage_ledger.cpp` cannot see a macro defined
+in `main.cpp`. All are `0` in a release build.
 
 | Switch | Effect |
 |---|---|
+| `DEBUG_LOGS` | Periodic housekeeping each cycle: link state and countdowns per heartbeat, poll cadence, battery voltage, a line per repaint, ledger totals |
 | `FRAME_DUMP_ENABLED` | Streams the real 1 bpp frame over the console so the panel can be inspected pixel-exactly |
 | `PRICING_SELFTEST` | Sweeps a week of tariff rules at boot and asserts the expected states |
 | `DEMO_DATA` | Renders fixed sample data, for checking the balance paths without a network |
+| `BATTERY_REPORT_RAW` | Prints the raw ADC counts and pin voltage for each battery reading |
 | `BRINGUP_SELFTEST` | Draws the raw panel bring-up pattern instead of the UI |
+
+`DEBUG_LOGS` deliberately does **not** gate event-driven output. Connection results,
+disconnects with their reason, balance fetches, tariff-state changes and every error
+still print, which is why the console itself is left enabled rather than disabled: it
+is the only diagnostic channel, and turning it off saves nothing.
 
 ## Licence
 
