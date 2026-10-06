@@ -39,9 +39,6 @@ everything else happens on its own.
 typeface (**Silkscreen**), the measured font sizes, and the block positions.
 
 ## What it shows
-
-![The panel](docs/panel.png)
-
 ```
 ■ DEEPSEEK                 WIFI:OK BAT:94% 12:04 UTC+8
 TOTAL AVAILABLE FUNDS                        RUNWAY: 6D
