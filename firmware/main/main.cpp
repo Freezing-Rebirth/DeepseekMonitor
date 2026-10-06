@@ -68,7 +68,7 @@ static const char *TAG = "app";
 // rendered panel can be inspected pixel-exactly on a workstation. Development aid
 // only: it adds a recurring serial burst. Turn on when capturing a frame with
 // _research/capture_bin.py.
-#define FRAME_DUMP_ENABLED 1
+#define FRAME_DUMP_ENABLED 0
 
 static RlcdPanel s_panel;
 
@@ -84,23 +84,28 @@ static void poll_balance();
 // ---------------------------------------------------------------------------
 static volatile bool s_portal_active = false;
 
+// When the station first went down with credentials stored. Drives the automatic
+// re-opening of the setup form, so a bad password recovers without a reboot.
+static TickType_t s_offline_since = 0;
+
+// How long to stay offline before offering the setup form again. Long enough that a
+// router reboot or a brief dropout does not raise the access point unnecessarily.
+#define PORTAL_AUTO_OPEN_MS (2 * 60 * 1000)
+
 // Last battery reading that actually succeeded. Kept so a transient ADC failure
 // does not blank the field the panel was already showing.
 static battery_reading_t s_last_bat = {};
 
-static void portal_task(void *arg)
-{
-    // First boot waits forever: the user has to find the AP, type a long API key
-    // and press save, and a five-minute cap meant the server was already shut down
-    // by the time they got there - the page then loaded empty because the port
-    // accepted the connection and closed it. Re-entry from the BOOT button keeps a
-    // timeout so a stray long press cannot pin the radio in AP mode forever.
-    const bool wait_forever = (arg != nullptr);
+static void portal_task(void *arg);
 
+// Run the portal to completion and return true when credentials came back.
+// Must be called with s_portal_active already set and no portal task running.
+static bool portal_run(bool wait_forever)
+{
+    wifi_prov_portal_clear_submitted();
     if (!wifi_prov_portal_start()) {
         s_portal_active = false;
-        vTaskDelete(nullptr);
-        return;
+        return false;
     }
 
     if (wait_forever) {
@@ -115,21 +120,42 @@ static void portal_task(void *arg)
         }
     }
 
+    const bool submitted = wifi_prov_portal_submitted();
     wifi_prov_portal_stop();
     s_portal_active = false;
+    return submitted;
+}
 
-    if (wifi_prov_portal_submitted()) {
-        ESP_LOGI(TAG, "credentials received, rejoining network");
-        esp_wifi_disconnect();
-        vTaskDelay(pdMS_TO_TICKS(500));
-        esp_wifi_connect();
-        if (wifi_wait_connected(25000)) {
-            ESP_LOGI(TAG, "reconnected");
-            if (clock_sync_sntp(15000)) ESP_LOGI(TAG, "clock synchronised");
-            poll_balance();
-        } else {
-            ESP_LOGW(TAG, "could not join the new network");
-        }
+static void portal_task(void *)
+{
+    // Always wait indefinitely. The form is the only way to fix a bad WiFi
+    // password or a moved router, and a timed window meant that a second attempt
+    // could arrive after the server had already shut down - the page then loaded
+    // into nothing. The portal is cheap to hold open: the station is suspended
+    // while it runs, so it is not fighting the access point.
+    if (!portal_run(true)) {
+        s_portal_active = false;
+        vTaskDelete(nullptr);
+        return;
+    }
+
+    ESP_LOGI(TAG, "credentials received, rejoining network");
+    // The driver is still holding the previous station config; the form wrote to
+    // NVS only. Apply the new one before reconnecting, or this attempt targets the
+    // old network and fails until the next reboot.
+    wifi_apply_stored_credentials();
+    esp_wifi_disconnect();
+    vTaskDelay(pdMS_TO_TICKS(500));
+    esp_wifi_connect();
+    if (wifi_wait_connected(25000)) {
+        ESP_LOGI(TAG, "reconnected");
+        if (clock_sync_sntp(15000)) ESP_LOGI(TAG, "clock synchronised");
+        poll_balance();
+    } else {
+        // Wrong password or unreachable network. The main loop notices that the
+        // station is down and raises the form again, so the user gets another
+        // attempt without touching the board.
+        ESP_LOGW(TAG, "could not join the new network; the setup form will reopen");
     }
 
     vTaskDelete(nullptr);
@@ -322,14 +348,22 @@ extern "C" void app_main(void)
 
     // No stored network, or the stored one did not answer: raise the portal so
     // the user can enter WiFi and the API key from a phone.
+    // 12 KB of stack because this task goes on to call poll_balance(), and the TLS
+    // handshake plus certificate-bundle parse does not fit in 6 KB - at 6 KB it
+    // tripped the FreeRTOS stack-overflow hook and rebooted the board in a loop.
     if (!online && !appcfg_has_wifi()) {
         ESP_LOGI(TAG, "no stored network; starting provisioning portal");
         s_portal_active = true;
-        // Non-null argument: wait forever, this is first-time setup. 12 KB of stack
-        // because this task goes on to call poll_balance(), and the TLS handshake
-        // plus certificate-bundle parse does not fit in 6 KB - at 6 KB it tripped
-        // the FreeRTOS stack-overflow hook and rebooted the board in a loop.
-        xTaskCreatePinnedToCore(portal_task, "portal", 12288, (void *)1, 3, nullptr, 0);
+        xTaskCreatePinnedToCore(portal_task, "portal", 12288, nullptr, 3, nullptr, 0);
+    } else if (!online) {
+        // Has credentials that will not connect: a wrong password, a moved router,
+        // or a network that is simply down. Either way the user cannot fix it from
+        // the panel, and the only recovery used to be a BOOT long press they would
+        // have to know about. Raise the form immediately, in the background, so the
+        // UI still comes up and the user can retry as often as they like.
+        ESP_LOGW(TAG, "stored network did not connect; opening the setup portal");
+        s_portal_active = true;
+        xTaskCreatePinnedToCore(portal_task, "portal", 12288, nullptr, 3, nullptr, 0);
     }
 
     if (online) {
@@ -394,6 +428,32 @@ extern "C" void app_main(void)
             } else {
                 vTaskDelay(pdMS_TO_TICKS(250));
             }
+        }
+
+        // Auto-recover an unreachable network.
+        //
+        // If the board cannot reach the stored network there is nothing the user can
+        // do from the panel, so the setup form is raised on its own. Without this,
+        // a wrong WiFi password looks exactly like dead hardware: the board
+        // associates, fails the handshake, retries forever, and never offers a way
+        // in. The delay keeps a brief blip - a router reboot, say - from raising the
+        // access point when the link is about to come back by itself.
+        if (!s_portal_active && appcfg_has_wifi() &&
+            !wifi_get_status().connected) {
+            if (s_offline_since == 0) {
+                s_offline_since = xTaskGetTickCount();
+            } else if ((xTaskGetTickCount() - s_offline_since) >=
+                       pdMS_TO_TICKS(PORTAL_AUTO_OPEN_MS)) {
+                ESP_LOGW(TAG, "offline for %u s with stored credentials; "
+                              "opening the setup portal",
+                         (unsigned)(PORTAL_AUTO_OPEN_MS / 1000));
+                s_portal_active = true;
+                xTaskCreatePinnedToCore(portal_task, "portal", 12288, nullptr, 3,
+                                        nullptr, 0);
+                s_offline_since = 0;
+            }
+        } else if (wifi_get_status().connected) {
+            s_offline_since = 0;
         }
 
         // Heartbeat: proves the LVGL task and the main loop are both alive.

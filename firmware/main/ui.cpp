@@ -2,6 +2,8 @@
 #include "ui_widgets.h"
 #include "ui_fonts.h"
 #include "pricing.h"
+#include "wifi_prov.h"
+#include "battery.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -260,7 +262,10 @@ void ui_update(const ui_model_t *m)
 
     // ---- status bar ----
     char txt[80];
-    snprintf(txt, sizeof(txt), "%s", m->wifi_connected ? "WIFI:OK" : "WIFI:--");
+    // Two-character suffix so the column keeps its width as the state changes:
+    // TR while an association is in flight, OK once an address is held, ER after a
+    // failed attempt or a dropped link.
+    snprintf(txt, sizeof(txt), "WIFI:%s", wifi_link_text());
     lv_label_set_text(g.st_wifi, txt);
 
     if (m->battery_valid) snprintf(txt, sizeof(txt), "BAT:%d%%", m->battery_percent);

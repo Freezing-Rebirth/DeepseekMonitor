@@ -2,6 +2,8 @@
 #include "board_rlcd.h"
 
 #include <esp_log.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 #include <esp_adc/adc_oneshot.h>
 #include <esp_adc/adc_cali.h>
 #include <esp_adc/adc_cali_scheme.h>
@@ -54,25 +56,47 @@ battery_reading_t battery_read()
     battery_reading_t out = {};
 
     if (!s_ready) battery_init();
-    if (!s_unit) return out;
+    if (!s_unit) {
+        ESP_LOGW(TAG, "read attempted before the ADC was ready");
+        return out;
+    }
 
-    // Average a handful of samples; the ADC on the S3 is noisy around a
-    // resistor divider.
+    // Two passes. A single failed conversion is normally transient - the radio
+    // competing for the ADC is the usual cause - so an immediate second attempt
+    // recovers it and the panel keeps its number instead of blanking to "BAT:--"
+    // for a whole refresh interval.
     int64_t acc = 0;
     int     n = 0;
-    for (int i = 0; i < 16; i++) {
-        int raw = 0;
-        if (adc_oneshot_read(s_unit, ADC_CHANNEL_3, &raw) == ESP_OK) {
-            acc += raw;
-            n++;
+    int     last_err = 0;
+    for (int pass = 0; pass < 2; pass++) {
+        for (int i = 0; i < 16; i++) {
+            int raw = 0;
+            const esp_err_t err = adc_oneshot_read(s_unit, ADC_CHANNEL_3, &raw);
+            if (err == ESP_OK) {
+                acc += raw;
+                n++;
+            } else {
+                last_err = (int)err;
+            }
         }
+        if (n > 0) break;
+        // Nothing at all came back; yield briefly and try once more.
+        vTaskDelay(pdMS_TO_TICKS(20));
     }
-    if (n == 0) return out;
+
+    if (n == 0) {
+        ESP_LOGW(TAG, "ADC produced no sample in 32 attempts (last err %d)", last_err);
+        return out;
+    }
     const int raw_avg = (int)(acc / n);
 
     int pin_mv = 0;
     if (s_cali_ok) {
-        if (adc_cali_raw_to_voltage(s_cali, raw_avg, &pin_mv) != ESP_OK) return out;
+        const esp_err_t err = adc_cali_raw_to_voltage(s_cali, raw_avg, &pin_mv);
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "calibration rejected raw=%d (err %d)", raw_avg, (int)err);
+            return out;
+        }
     } else {
         // Rough fallback: 12 dB attenuation spans about 3100 mV.
         pin_mv = (int)((int64_t)raw_avg * 3100 / 4095);

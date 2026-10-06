@@ -170,11 +170,47 @@ static esp_err_t save_post(httpd_req_t *req)
         return ESP_FAIL;
     }
 
+    // Validate the password shape before storing it.
+    //
+    // A WPA2 passphrase is either empty (open network), at least 8 characters, or
+    // exactly 64 hex digits (a raw PSK). Anything else cannot work, and storing it
+    // produces a device that associates, fails the four-way handshake with reason
+    // 15, and retries forever - a symptom that looks like a hardware fault but is
+    // really one short password. Catching it here turns that into a form error.
+    const size_t pass_len = strlen(pass);
+    bool pass_ok = (pass_len == 0) || (pass_len >= 8 && pass_len <= 63) ||
+                   (pass_len == 64);
+    if (pass_ok && pass_len == 64) {
+        for (size_t i = 0; i < 64; i++) {
+            const char c = pass[i];
+            const bool hex = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') ||
+                             (c >= 'A' && c <= 'F');
+            if (!hex) { pass_ok = false; break; }
+        }
+    }
+    if (!pass_ok) {
+        ESP_LOGW(TAG, "rejected a %u-character passphrase for '%s'",
+                 (unsigned)pass_len, ssid);
+        static const char bad[] =
+            "<!DOCTYPE html><html><head><meta charset=\"utf-8\">"
+            "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+            "<style>body{font-family:monospace;background:#111;color:#eee;padding:24px}"
+            "h1{font-size:16px}a{color:#8cf}</style></head><body>"
+            "<h1>PASSWORD NOT ACCEPTED</h1>"
+            "<p>A WPA2 passphrase must be at least 8 characters, or exactly 64 "
+            "hexadecimal digits. Leave it empty for an open network.</p>"
+            "<p><a href=\"/\">Go back</a></p></body></html>";
+        httpd_resp_set_status(req, "400 Bad Request");
+        httpd_resp_set_type(req, "text/html; charset=utf-8");
+        httpd_resp_send(req, bad, HTTPD_RESP_USE_STRLEN);
+        return ESP_OK;
+    }
+
     appcfg_set_wifi(ssid, pass);
     if (key[0] != '\0') app_config_set_api_key(key);
 
-    ESP_LOGI(TAG, "received credentials for SSID '%s' (key %s)",
-             ssid, key[0] ? "set" : "unchanged");
+    ESP_LOGI(TAG, "stored credentials for '%s' (passphrase %u chars, api key %s)",
+             ssid, (unsigned)pass_len, key[0] ? "set" : "unchanged");
 
     static const char ok[] =
         "<!DOCTYPE html><html><head><meta charset=\"utf-8\">"
@@ -243,10 +279,18 @@ bool wifi_prov_portal_start()
     s_running = true;
     ESP_LOGI(TAG, "provisioning portal up: join '%s' and open http://192.168.4.1/",
              APP_PROV_AP_SSID);
+
+    // Freeze the station side while the form is being served. The mode is APSTA, so
+    // leaving the station in its reconnect loop makes it fight the access point for
+    // the one radio - which is how a submitted form ended up never reaching the
+    // device at all.
+    wifi_prov_suspend_station(true);
     return true;
 }
 
 bool wifi_prov_portal_submitted() { return s_submitted; }
+
+void wifi_prov_portal_clear_submitted() { s_submitted = false; }
 
 void wifi_prov_portal_stop()
 {
@@ -258,6 +302,9 @@ void wifi_prov_portal_stop()
         esp_wifi_set_mode(WIFI_MODE_STA);
     }
     s_running = false;
+    // Hand the station back so the caller can reconnect with whatever credentials
+    // are now stored.
+    wifi_prov_suspend_station(false);
     ESP_LOGI(TAG, "provisioning portal stopped");
 }
 

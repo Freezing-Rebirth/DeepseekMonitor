@@ -107,6 +107,17 @@ build.bat -p COM7 -b 921600 flash
 Hold **BOOT for about 3 seconds** at any time to reopen the setup page. Credentials live in
 NVS and survive an application reflash.
 
+**If the network cannot be reached** — a wrong password, a moved router, an outage — the
+board raises its own access point again on its own, two minutes after it goes offline, so
+the form is always reachable. The status bar says which state it is in:
+
+| Status bar | Meaning |
+|---|---|
+| `WIFI:--` | No credentials stored; nothing is being attempted |
+| `WIFI:TR` | Credentials stored, connection in progress |
+| `WIFI:OK` | Connected |
+| `WIFI:ER` | The attempt failed; a retry is due |
+
 > The ESP32-S3 radio is 2.4 GHz only, so a 5 GHz-only network will not work.
 
 ## How the numbers are derived

@@ -105,7 +105,32 @@ A fresh board has no credentials, so it raises its own access point:
 **Hold BOOT for about 3 seconds** at any time to reopen the setup page. Credentials are
 stored in the `dscfg` NVS namespace and survive a reflash of the application.
 
-The ESP32-S3 radio is 2.4 GHz only, so a 5 GHz-only network will not work.
+The setup form is also raised automatically whenever the board cannot reach the stored
+network — two minutes after it goes offline. Without that, a wrong password is
+indistinguishable from dead hardware: the board associates, fails the handshake, retries
+forever, and never offers a way back in.
+
+The status bar reports which state the link is in:
+
+| Status bar | Meaning |
+|---|---|
+| `WIFI:--` | No credentials stored; nothing is being attempted |
+| `WIFI:TR` | Credentials stored and a connection is in progress |
+| `WIFI:OK` | Connected, address held |
+| `WIFI:ER` | The attempt failed; the driver will retry |
+
+Two things about the driver are easy to get wrong here, and both are handled in
+`wifi_prov.cpp`:
+
+- **`esp_wifi_set_config()` writes to the driver's RAM, not to NVS.** Storing credentials
+  from the form and reconnecting without pushing them into the driver makes the reconnect
+  target the *previous* network, so setup appears to fail and then works after a reboot.
+  `wifi_apply_stored_credentials()` is what closes that gap.
+- **The station must not retry while the access point is up.** The radio is in `APSTA`
+  mode, so a station looping on reconnects competes with the access point and the form's
+  requests are dropped. `wifi_prov_suspend_station()` freezes it for the duration.
+
+The ESP32-S3 radio is 2.4 GHz only.
 
 ## How the numbers are derived
 
