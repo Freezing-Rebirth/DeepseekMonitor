@@ -47,6 +47,16 @@ static const char *TAG = "app";
 // peak windows. Development aid only; it emits ~200 lines.
 #define PRICING_SELFTEST 0
 
+// Set to 1 to print every battery reading with its raw ADC counts and pin voltage.
+//
+// The percentage on the panel comes from a straight line between 2.5 V and 4.2 V,
+// which is a placeholder: a Li-ion cell is flat through the middle of its range, so
+// a linear map is least accurate where it matters most. Measuring the real curve
+// needs two numbers per point - what the ADC saw, and what a multimeter reads on
+// the cell - so this mode prints the first. See the calibration section of the
+// README.
+#define BATTERY_REPORT_RAW 0
+
 // Set to 1 to render the panel with fixed sample data instead of the live API
 // result. The panel's dynamic paths - the balance figures, the token equivalent
 // and the NEXT switch time - only run once a balance has been fetched and the
@@ -363,7 +373,28 @@ extern "C" void app_main(void)
     price_state_t last_price_state = pricing_classify(model.now);
 
     while (true) {
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        // Sleep until the next scheduled event instead of polling every second.
+        //
+        // The loop used to wake once a second purely to compare tick counters,
+        // which keeps the CPU out of idle for no reason. Nothing here needs
+        // sub-second resolution: the clock changes once a minute and the balance
+        // every few minutes. The floor of 250 ms is what keeps the BOOT button
+        // responsive, since that is the only input.
+        {
+            const TickType_t now = xTaskGetTickCount();
+            const TickType_t ui_left  = pdMS_TO_TICKS(APP_UI_REFRESH_MS) -
+                                        (now - last_ui);
+            const TickType_t api_left = pdMS_TO_TICKS(APP_BALANCE_POLL_MS) -
+                                        (now - last_api);
+            // TickType_t is unsigned, so a deadline already passed wraps to a huge
+            // value - take the minimum, then clamp it down to the floor.
+            TickType_t wait = (ui_left < api_left) ? ui_left : api_left;
+            if (wait > pdMS_TO_TICKS(250)) {
+                vTaskDelay(wait);
+            } else {
+                vTaskDelay(pdMS_TO_TICKS(250));
+            }
+        }
 
         // Heartbeat: proves the LVGL task and the main loop are both alive.
         if ((xTaskGetTickCount() - last_hb) >= pdMS_TO_TICKS(30000)) {
@@ -444,7 +475,15 @@ extern "C" void app_main(void)
             // Battery diagnostics: one line per repaint, so the ADC reading can be
             // watched over time rather than inferred from the panel.
             if (bat.valid) {
-                ESP_LOGI(TAG, "battery %.2f V -> %d%%", (double)bat.volts, bat.percent);
+                ESP_LOGI(TAG, "battery %.3f V -> %d%%", (double)bat.volts, bat.percent);
+#if BATTERY_REPORT_RAW
+                // Everything needed to fit the divider ratio and the discharge
+                // curve: what the ADC counted, what the calibration scheme made of
+                // it, and what that implies for the cell. Note the cell voltage in
+                // a terminal beside it.
+                ESP_LOGI(TAG, "  raw=%d counts, pin=%d mV, divider=%d -> cell=%.3f V",
+                         bat.raw, bat.pin_mv, (int)BAT_DIVIDER, (double)bat.volts);
+#endif
             } else {
                 ESP_LOGW(TAG, "battery read failed");
             }

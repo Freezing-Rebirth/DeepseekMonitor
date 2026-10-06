@@ -79,9 +79,17 @@ battery_reading_t battery_read()
     }
 
     out.valid = true;
+    out.raw = raw_avg;
+    out.pin_mv = pin_mv;
     out.volts = (float)pin_mv / 1000.0f * BAT_DIVIDER;
 
     // 18650 discharge curve endpoints as used by the vendor examples.
+    //
+    // This is a straight line, which is the crudest possible model: a Li-ion cell
+    // holds most of its charge between 3.5 V and 3.9 V, so a linear map loses
+    // resolution exactly where it matters and reads high through the middle. It is
+    // only a placeholder until the real curve is measured - see the calibration
+    // notes in the README.
     float pct = (out.volts - 2.5f) / (4.2f - 2.5f) * 100.0f;
     if (pct < 0.0f)   pct = 0.0f;
     if (pct > 100.0f) pct = 100.0f;

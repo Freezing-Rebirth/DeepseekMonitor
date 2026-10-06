@@ -15,7 +15,8 @@ static const char *TAG = "wifi";
 static bool s_connected = false;
 static char s_ip[24] = "0.0.0.0";
 static char s_ssid[40] = {0};
-static int8_t s_rssi = 0;
+// The RSSI is read straight from esp_wifi_sta_get_ap_info() in wifi_get_status(),
+// so it is deliberately not cached here.
 
 // ---------------------------------------------------------------------------
 // Credential store
@@ -131,6 +132,22 @@ void wifi_start()
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wc));
     ESP_ERROR_CHECK(esp_wifi_start());
+
+    // Modem sleep. Without this the radio stays in the receive chain permanently,
+    // which costs far more than the polling interval ever does - the interval only
+    // decides how often the radio has to wake, while this decides whether it sleeps
+    // at all. The board talks to the network for a second or two every few minutes,
+    // so the extra latency this adds to a request is irrelevant.
+    //
+    // Kept as WIFI_PS_MIN_MODEM rather than MAX_MODEM: MIN keeps the connection
+    // responsive enough that a poll does not have to wait through several DTIM
+    // intervals before the AP forwards to us.
+    const esp_err_t ps = esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
+    if (ps != ESP_OK) {
+        ESP_LOGW(TAG, "could not enable WiFi modem sleep: %s", esp_err_to_name(ps));
+    } else {
+        ESP_LOGI(TAG, "WiFi modem sleep enabled");
+    }
 
     if (ssid[0] == '\0') {
         ESP_LOGW(TAG, "no stored credentials; provisioning portal required");

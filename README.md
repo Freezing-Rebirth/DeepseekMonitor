@@ -151,17 +151,21 @@ statutory holidays; off-peak is everything else, including weekends and holidays
 Off-peak prices are exactly half of peak. Holidays and compensatory workdays for 2026 are in
 `firmware/main/holidays_2026.cpp`.
 
-### Refresh cadence
+### Refresh cadence and power
 
 | Interval | Effect |
 |---|---|
-| 5 minutes | API poll, and one ledger update |
+| 3 minutes | API poll, and one ledger update |
 | 1 minute | Repaint: clock, battery, tariff state |
 
-Writing to NVS every five minutes looks alarming, so the flash budget is worked out in
-`firmware/main/usage_ledger.cpp`: at five integer keys per poll and 126 entries per NVS page,
-the 24 KB partition endures roughly 143 years. Batching those writes would change nothing,
-because the totals only move when a poll happens.
+The poll interval trades power against accuracy: each poll costs a TLS handshake and a radio
+wake-up, while a shorter interval means less consumption is lost when a top-up lands in the
+same window as spending. At three minutes that loss stays under a percent.
+
+Two things matter far more to battery life than the interval: **WiFi modem sleep** is
+enabled, so the radio is not sitting in the receive chain permanently, and the control loop
+sleeps to its next deadline instead of waking every second. NVS wear at this cadence is
+around 38 years, worked out in `firmware/main/usage_ledger.cpp`.
 
 ## Layout
 

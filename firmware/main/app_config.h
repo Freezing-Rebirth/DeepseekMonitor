@@ -30,9 +30,16 @@
 // Polling cadence, milliseconds.
 //
 // The balance poll also records a ledger sample, and BURN/RUNWAY are derived from
-// the samples already stored. Halving the interval to 5 minutes therefore both
-// refreshes the balance sooner and doubles the sample density: the ledger holds 64
-// samples, so 5 minutes covers about 5.3 hours of history instead of 10.7.
-#define APP_BALANCE_POLL_MS   (5 * 60 * 1000)    // hit the API every 5 minutes
+// the running totals. A shorter interval means less consumption is lost when a
+// top-up lands in the same window as spending, but each poll costs a TLS handshake
+// and a radio wake-up, so the interval is a power/accuracy trade:
+//
+//   1 minute  ~0.2% of a top-up window's spend lost, ~28 years of NVS life
+//   3 minutes ~0.6%,                              ~38 years        <- chosen
+//   5 minutes ~1.0%,                              ~143 years
+//
+// Three minutes is the compromise: the top-up error stays well under a percent
+// while the radio wakes a fifth as often as it would at one minute.
+#define APP_BALANCE_POLL_MS   (3 * 60 * 1000)    // hit the API every 3 minutes
 #define APP_UI_REFRESH_MS     (60 * 1000)        // repaint once a minute
 #define APP_PRICE_POLL_MS     (10 * 1000)        // re-evaluate peak/trough often

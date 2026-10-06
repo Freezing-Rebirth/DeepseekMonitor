@@ -160,17 +160,38 @@ Chinese holidays and compensatory workdays for 2026 are in `main/holidays_2026.c
 `NEXT` is computed by walking forward to the next state change rather than from a table, so
 it stays correct across the weekend gap.
 
-### Refresh cadence
+### Refresh cadence and power
 
 | Interval | Setting | Effect |
 |---|---|---|
-| 5 minutes | `APP_BALANCE_POLL_MS` | API poll, and a ledger update |
+| 3 minutes | `APP_BALANCE_POLL_MS` | API poll, and a ledger update |
 | 1 minute | `APP_UI_REFRESH_MS` | Repaint: clock, battery, tariff state |
 
-Writing to NVS every five minutes looks alarming, so the flash budget is worked out in
-`main/usage_ledger.cpp`: at five integer keys per poll and 126 entries per NVS page, the
-24 KB partition endures roughly 143 years. Batching the writes would not change that,
-because the totals only change when a poll happens.
+The poll interval is a power/accuracy trade. Each poll costs a TLS handshake and a radio
+wake-up, so a longer interval saves battery; a shorter one means less consumption is lost
+when a top-up lands in the same window as spending.
+
+| Interval | Spend lost per top-up | NVS life |
+|---|---|---|
+| 1 minute | ~0.2 % | ~28 years |
+| **3 minutes** | **~0.6 %** | **~38 years** |
+| 5 minutes | ~1.0 % | ~143 years |
+
+Three minutes keeps the top-up error under a percent while the radio wakes a fifth as often
+as it would at one minute.
+
+Two things matter far more to battery life than that interval:
+
+- **WiFi modem sleep** (`WIFI_PS_MIN_MODEM`, set in `wifi_prov.cpp`). Without it the radio
+  stays in the receive chain permanently. The interval decides how often the radio wakes;
+  this decides whether it sleeps at all.
+- **The control loop sleeps to its next deadline** rather than waking every second to
+  compare tick counters. The floor is 250 ms, which is what keeps the BOOT button snappy.
+
+NVS wear is worked out in `main/usage_ledger.cpp`: at five integer keys per poll and 126
+entries per NVS page, the 24 KB partition endures roughly 38 years at a three-minute
+interval. Batching those writes would change nothing, because the totals only move when a
+poll happens.
 
 ## Fonts
 
