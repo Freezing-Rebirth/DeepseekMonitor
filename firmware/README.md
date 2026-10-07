@@ -185,6 +185,45 @@ Chinese holidays and compensatory workdays for 2026 are in `main/holidays_2026.c
 `NEXT` is computed by walking forward to the next state change rather than from a table, so
 it stays correct across the weekend gap.
 
+### Keeping the holiday table current
+
+`main/holidays_2026.cpp` only covers the year it was compiled for, so the arrangement for a
+later year has to come from somewhere else. Three sources are tried in order, and their
+responses are normalised to the same four day kinds (workday / weekend / holiday /
+compensatory workday):
+
+| Source | Daily query | Yearly query |
+|---|---|---|
+| `holiday.dreace.top` | `/<YYYY-MM-DD>`, ~63 bytes | — |
+| `timor.tech` | `/api/holiday/info/<date>`, ~200 bytes | `/api/holiday/year/<year>`, ~3 KB |
+| `publicapi.xiaoai.me` | `/holiday/day?date=<date>`, ~143 bytes | `/holiday/year?date=<year>`, ~4.5 KB |
+| `chinese-days` | — | `cdn.jsdelivr.net/npm/chinese-days/dist/years/<year>.json`, ~1.6 KB |
+
+`dreace` is tried first because the other two query services sit behind Cloudflare and that
+path is not reachable from this board — they resolve, then the connection fails. All are kept
+anyway, since the reachability of any one host is not something the firmware can assume.
+`chinese-days` is a static JSON release rather than a query service, published by an
+automated pull request when the State Council publishes; both of its CDN hosts are listed.
+
+As of 2026-10 the three sources and the compiled table all agree exactly: 33 holidays and 6
+compensatory workdays.
+
+The **daily** query runs once a day and answers only for the day being displayed. That is
+what keeps up with an arrangement amended after publication. The **yearly** query runs
+monthly and exists because a single-day query says nothing about a future day, and `NEXT`
+can fall on one.
+
+Everything is persisted in NVS, and everything falls back to the compiled table, so no
+outage can change what the panel shows — it only stops the board from learning:
+
+```
+today's cached verdict  ->  cached yearly table  ->  compiled 2026 table
+```
+
+`holidays_year_supported()` reports whether either network source covers a given year. When
+it returns false the panel is applying plain weekday rules, which means holidays are billed
+as peak and compensatory Saturdays as off-peak.
+
 ### Refresh cadence and power
 
 | Interval | Setting | Effect |
@@ -280,6 +319,7 @@ in `main.cpp`. All are `0` in a release build.
 | Switch | Effect |
 |---|---|
 | `DEBUG_LOGS` | Periodic housekeeping each cycle: link state and countdowns per heartbeat, poll cadence, battery voltage, a line per repaint, ledger totals |
+| `HOLIDAYS_FORCE_REFRESH` | Ignore the cached holiday verdict on the next daily check. A cached verdict covers a whole day, so without this a change to the fetch path cannot be observed until tomorrow |
 | `FRAME_DUMP_ENABLED` | Streams the real 1 bpp frame over the console so the panel can be inspected pixel-exactly |
 | `PRICING_SELFTEST` | Sweeps a week of tariff rules at boot and asserts the expected states |
 | `DEMO_DATA` | Renders fixed sample data, for checking the balance paths without a network |

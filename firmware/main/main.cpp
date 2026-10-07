@@ -31,6 +31,7 @@
 #include "frame_dump.h"
 #include "pricing.h"
 #include "debug_config.h"
+#include "holidays.h"
 #include "pricing_selftest.h"
 #include "selftest.h"
 #include "ui.h"
@@ -98,6 +99,49 @@ static TickType_t s_offline_since = 0;
 static battery_reading_t s_last_bat = {};
 
 static void portal_task(void *arg);
+
+// ---------------------------------------------------------------------------
+// Holiday arrangement refresh.
+//
+// Two requests on different schedules, because they answer different questions:
+//
+//   daily  - the ~200 byte single-day endpoint, for the day actually being
+//            displayed. This is what keeps up with an arrangement that is amended
+//            after it is published, which is the point of checking at all.
+//   monthly - the ~3 KB yearly table, so days the daily check cannot see - the next
+//            switch time can fall on one - are still covered.
+//
+// Both write to NVS and both fall back to the compiled table, so no failure here
+// can change what the panel shows; it only stops the board from learning.
+//
+// Its own task because each request is an HTTPS round trip and the main loop must
+// not block on it. 12 KB of stack for the TLS handshake, same as the balance poll.
+// ---------------------------------------------------------------------------
+static void holiday_task(void *)
+{
+    while (true) {
+        if (wifi_get_status().connected && clock_is_synced()) {
+            struct tm bj;
+            pricing_beijing_tm(clock_now(), &bj);
+            const int year = bj.tm_year + 1900;
+            const int month = bj.tm_mon + 1;
+            const int day = bj.tm_mday;
+
+            if (holidays_today_stale(year, month, day)) {
+                holidays_fetch_today(year, month, day);
+            }
+            // A year the compiled table does not cover has to come from here, so
+            // fetch it even when the monthly interval has not elapsed yet.
+            if (holidays_year_refresh_due() || !holidays_year_supported(year)) {
+                holidays_runtime_fetch_year(year);
+            }
+        }
+        // Woken hourly so a board whose clock only just synced, or whose network was
+        // down, retries promptly rather than waiting a whole day. Both fetches are
+        // gated on their own intervals inside.
+        vTaskDelay(pdMS_TO_TICKS(60 * 60 * 1000));
+    }
+}
 
 // Run the portal to completion and return true when credentials came back.
 // Must be called with s_portal_active already set and no portal task running.
@@ -342,6 +386,14 @@ extern "C" void app_main(void)
     app_config_init();
     ledger_init();
     battery_init();
+    // Load any previously fetched holiday arrangement before the first tariff
+    // classification, so a reboot keeps using last month's data rather than falling
+    // back to the compiled table for a year it does not cover.
+    holidays_runtime_init();
+#if HOLIDAYS_FORCE_REFRESH
+    // Development aid: see debug_config.h.
+    holidays_force_refresh_once();
+#endif
 
     // ---- network ----
     wifi_start();
@@ -378,6 +430,12 @@ extern "C" void app_main(void)
 
     if (online && clock_is_synced()) {
         poll_balance();
+    }
+
+    // Keep the holiday arrangement current without a reflash. Started whenever the
+    // link is up; the task itself decides whether a refresh is due.
+    if (online) {
+        xTaskCreatePinnedToCore(holiday_task, "holidays", 12288, nullptr, 2, nullptr, 0);
     }
 
     // ---- UI ----

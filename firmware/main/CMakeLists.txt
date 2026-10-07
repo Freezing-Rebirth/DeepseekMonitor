@@ -11,6 +11,7 @@ idf_component_register(
         "ui_fonts.cpp"
         "pricing.cpp"
         "holidays_2026.cpp"
+        "holidays_net.cpp"
         "clock_time.cpp"
         "usage_ledger.cpp"
         "deepseek_api.cpp"

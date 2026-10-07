@@ -20,3 +20,7 @@
 // disconnects with their reason, balance fetches, tariff-state changes and every
 // error still print, so a release build stays diagnosable.
 #define DEBUG_LOGS 0
+
+// Set to 1 to ignore the cached holiday verdict on the next daily check, so a change
+// to the fetch path can be observed without waiting for the cache to expire.
+#define HOLIDAYS_FORCE_REFRESH 0
