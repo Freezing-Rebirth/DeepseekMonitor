@@ -138,12 +138,16 @@ static hol_blob_t s_blob;
 static bool       s_loaded = false;
 
 // Set by HOLIDAYS_FORCE_REFRESH in main.cpp to make the first check ignore the
-// caches, so a change to the fetch path can be observed without waiting a day.
-static bool s_force_next = false;
+// caches, so a change to the fetch path can be observed without waiting a day. Two
+// flags because the daily check consumes its own: the yearly interval would never
+// see the force if they shared one.
+static bool s_force_today = false;
+static bool s_force_year  = false;
 
 void holidays_force_refresh_once(void)
 {
-    s_force_next = true;
+    s_force_today = true;
+    s_force_year  = true;
 }
 
 static void blob_defaults(hol_blob_t *b)
@@ -452,9 +456,9 @@ bool holidays_today_stale(int year, int month, int day)
     // One-shot override for bringing the feature up and for support: the caches hold
     // a verdict for a whole day, so without this a fix cannot be observed until
     // tomorrow.
-    if (s_force_next) {
-        s_force_next = false;
-        ESP_LOGW(TAG, "forced refresh requested");
+    if (s_force_today) {
+        s_force_today = false;
+        ESP_LOGW(TAG, "forced daily refresh requested");
         return true;
     }
     if (s_blob.today.date != ymd(year, month, day)) return true;
@@ -513,6 +517,13 @@ bool holidays_fetch_today(int year, int month, int day)
 bool holidays_year_refresh_due()
 {
     blob_load();
+    // The force switch covers both intervals: the point of it is to exercise the whole
+    // fetch path now rather than in a day or a month.
+    if (s_force_year) {
+        s_force_year = false;
+        ESP_LOGW(TAG, "forced yearly refresh requested");
+        return true;
+    }
     if (s_blob.year_checked == 0) return true;
     const time_t now = time(nullptr);
     if (now < 1600000000) return false;

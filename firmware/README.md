@@ -205,8 +205,18 @@ anyway, since the reachability of any one host is not something the firmware can
 `chinese-days` is a static JSON release rather than a query service, published by an
 automated pull request when the State Council publishes; both of its CDN hosts are listed.
 
-As of 2026-10 the three sources and the compiled table all agree exactly: 33 holidays and 6
-compensatory workdays.
+Measured on the board, which is why the order is what it is:
+
+```
+I holidays: 2026-10-07 is a holiday (via dreace)                     daily, 1 request
+W holidays: timor.tech -> 172.67.164.246 but connect failed          Cloudflare
+W holidays: publicapi.xiaoai.me -> 104.21.56.121 but connect failed  Cloudflare
+I holidays: stored 2026: 33 holidays, 6 makeup days (via chinese-days/jsdelivr)
+```
+
+So of the four, `dreace` answers the daily query and `chinese-days` the yearly one. As of
+2026-10 all four and the compiled table agree exactly: 33 holidays and 6 compensatory
+workdays.
 
 The **daily** query runs once a day and answers only for the day being displayed. That is
 what keeps up with an arrangement amended after publication. The **yearly** query runs
