@@ -17,6 +17,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <esp_log.h>
+#include <esp_pm.h>
 #include <esp_private/esp_clk.h>
 #include <esp_cpu.h>
 #include <esp_timer.h>
@@ -366,6 +367,41 @@ extern "C" void app_main(void)
     ESP_LOGI(TAG, "DeepSeek Monitor starting");
     ESP_LOGI(TAG, "PSRAM free at boot: %u bytes",
              (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+
+    // ---- power management ----
+    //
+    // CONFIG_PM_DFS_INIT_AUTO alone only installs dynamic frequency scaling: the
+    // startup code calls esp_pm_configure() with the two frequencies and leaves
+    // light_sleep_enable at false (esp_pm/pm_impl.c, esp_pm_impl_init). Automatic
+    // light sleep has to be asked for, and without this call the system stops at the
+    // DFS floor and never enters a low-power state at all - CONFIG_PM_ENABLE and
+    // CONFIG_FREERTOS_USE_TICKLESS_IDLE are necessary but not sufficient.
+    //
+    // The ceiling is the configured CPU frequency (80 MHz); the floor is the XTAL,
+    // 40 MHz, and that is what the CPU idles at. With WiFi modem sleep already on,
+    // light sleep is what the system falls into between DTIM beacons.
+    //
+    // Light sleep does not engage while a USB host is attached: the USB-Serial/JTAG
+    // connection monitor holds an ESP_PM_NO_LIGHT_SLEEP lock for as long as the
+    // console is connected. A board on a cable therefore reports a 100% duty cycle in
+    // the heartbeat, and running it on battery is the only way to see the saving.
+    //
+    // A failure is logged rather than fatal: DFS still stands, and a reboot loop on a
+    // device with no console attached is worse than losing the feature quietly.
+    {
+        const esp_pm_config_t pm = {
+            .max_freq_mhz = CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ,
+            .min_freq_mhz = esp_clk_xtal_freq() / 1000000,
+            .light_sleep_enable = true,
+        };
+        const esp_err_t pm_err = esp_pm_configure(&pm);
+        if (pm_err != ESP_OK) {
+            ESP_LOGE(TAG, "power management config failed: %s", esp_err_to_name(pm_err));
+        } else {
+            ESP_LOGI(TAG, "power management: %d..%d MHz, automatic light sleep on",
+                     (int)pm.max_freq_mhz, (int)pm.min_freq_mhz);
+        }
+    }
 
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {

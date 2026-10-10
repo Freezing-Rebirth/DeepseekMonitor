@@ -130,7 +130,7 @@ elapsed_s     total seconds monitored
 ref_balance   the balance the next delta is measured against
 ```
 
-Every poll (5 minutes by default) folds in one reading:
+Every poll (3 minutes by default, `APP_BALANCE_POLL_MS`) folds in one reading:
 
 ```
 delta = ref_balance - new_balance
@@ -170,10 +170,13 @@ The poll interval trades power against accuracy: each poll costs a TLS handshake
 wake-up, while a shorter interval means less consumption is lost when a top-up lands in the
 same window as spending. At three minutes that loss stays under a percent.
 
-Two things matter far more to battery life than the interval: **WiFi modem sleep** is
-enabled, so the radio is not sitting in the receive chain permanently, and the control loop
-sleeps to its next deadline instead of waking every second. NVS wear at this cadence is
-around 38 years, worked out in `firmware/main/usage_ledger.cpp`.
+Three things matter far more to battery life than the interval: **power management** is
+enabled, so the CPU idles at 40 MHz and drops into automatic light sleep between WiFi
+beacons instead of sitting at a fixed clock; **WiFi modem sleep** is enabled, so the radio
+is not sitting in the receive chain permanently; and the control loop sleeps to its next
+deadline instead of waking every second. Light sleep does not engage while the board is on a
+USB cable, because the console holds it awake. NVS wear at this cadence is around 38 years,
+worked out in `firmware/main/usage_ledger.cpp`.
 
 ## Layout
 

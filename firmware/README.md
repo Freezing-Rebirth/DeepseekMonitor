@@ -146,7 +146,7 @@ elapsed_s     total seconds monitored
 ref_balance   the balance the next delta is measured against
 ```
 
-Every poll (5 minutes by default) folds in one reading:
+Every poll (3 minutes by default, `APP_BALANCE_POLL_MS`) folds in one reading:
 
 ```
 delta = ref_balance - new_balance
@@ -265,11 +265,16 @@ Three things matter far more to battery life than that interval:
   0 when nothing is animating, and that used to be floored to 10 ms — 100 wakeups a second,
   about 8.6 million a day, to keep concluding that a static panel had not changed.
 
-`CONFIG_PM_ENABLE` is **not** set, so there is no automatic light sleep and no dynamic
-frequency scaling: the CPU sits at 160 MHz and drops only to the FreeRTOS idle task rather
-than into a low-power state. Enabling it is the largest remaining lever, at the cost of
-increased interrupt latency and coarser RTOS timers. It has not been tried, because this
-board is flashed and monitored over USB-Serial/JTAG and light sleep can interfere with that.
+Power management is on: `CONFIG_PM_ENABLE` with `CONFIG_PM_DFS_INIT_AUTO`, so the CPU idles
+at the XTAL (40 MHz) and runs at an 80 MHz ceiling rather than sitting at a fixed 160 MHz.
+Dynamic frequency scaling comes from those options alone, but automatic light sleep does
+not: the startup code calls `esp_pm_configure()` with the two frequencies and leaves
+`light_sleep_enable` false, so `app_main()` asks for it explicitly.
+
+One consequence is easy to misread. Light sleep does not engage while a USB host is
+attached, because the USB-Serial/JTAG connection monitor holds an `ESP_PM_NO_LIGHT_SLEEP`
+lock for as long as the console is connected. The `awake=` figure in the heartbeat therefore
+reads 100% on a cable, and the saving can only be measured on battery.
 
 ### Battery gauge
 
@@ -338,7 +343,7 @@ are `const` and cannot be modified in place.
 
 | File | Responsibility |
 |---|---|
-| `main.cpp` | Startup, the 1-second control loop, LVGL mutex, provisioning task |
+| `main.cpp` | Startup, power management, the deadline-driven control loop, LVGL mutex, provisioning task |
 | `board_rlcd.cpp` | SPI and `esp_lcd` panel IO, ST7305 init, 1bpp frame buffer, LVGL flush |
 | `ui.cpp` | Panel layout, tariff-state inversion, all copy |
 | `ui_widgets.cpp` | Small widget helpers (boxes, labels, dashed rules) |

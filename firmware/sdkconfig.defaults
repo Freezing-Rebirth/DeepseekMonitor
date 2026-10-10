@@ -23,22 +23,34 @@ CONFIG_FREERTOS_HZ=1000
 # Without this the CPU only ever drops to the FreeRTOS idle task, at a fixed
 # frequency, and never enters a low-power state. Turning it on allows two things:
 #
-#   dynamic frequency scaling - the CPU drops to 80 MHz when there is no work,
-#   which is most of the time for a board that repaints once a minute.
+#   dynamic frequency scaling - the CPU idles at the XTAL (40 MHz) and runs at the
+#   80 MHz ceiling when there is work, which for a board that repaints once a minute
+#   is very little of the time.
 #
 #   automatic light sleep - with WiFi modem sleep already on, the system can sleep
 #   between DTIM beacons instead of spinning through the idle task.
 #
+# Automatic light sleep is NOT one of the options below. CONFIG_PM_DFS_INIT_AUTO
+# only installs DFS: the startup code calls esp_pm_configure() with the two
+# frequencies and leaves light_sleep_enable false (esp_pm/pm_impl.c,
+# esp_pm_impl_init). The application has to ask for light sleep explicitly, which
+# app_main() does before NVS is initialised. Removing that call silently drops the
+# system back to DFS alone.
+#
 # The costs are real and are why this is a separate change: interrupt latency goes
-# up, RTOS timers get coarser, and light sleep can interfere with USB-Serial/JTAG,
-# which is how this board is flashed and monitored. If flashing starts failing, or
-# the console goes quiet, this block is the first thing to remove.
+# up, RTOS timers get coarser, and light sleep does not engage while a USB host is
+# attached, because the USB-Serial/JTAG connection monitor holds an
+# ESP_PM_NO_LIGHT_SLEEP lock for as long as the console is connected - which is how
+# this board is flashed and monitored, so on a cable it reads as 100% awake. If
+# flashing starts failing, or the console goes quiet, this block is the first thing
+# to remove.
 CONFIG_PM_ENABLE=y
 CONFIG_PM_DFS_INIT_AUTO=y
 CONFIG_FREERTOS_USE_TICKLESS_IDLE=y
-# Let the CPU scale down to 80 MHz. The 40 MHz step is not used: the flash and octal
-# PSRAM are both on 80 MHz dividers, and a lower CPU clock would put them out of
-# ratio for no useful saving.
+# The startup frequency, and the ceiling that DFS scales down from. DFS init sets the
+# floor to the XTAL, i.e. 40 MHz; 160 and 240 are never reachable under an 80 MHz
+# ceiling, and the flash and octal PSRAM dividers are the reason the ceiling is 80
+# rather than higher.
 CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_80=y
 
 # ---- Task stacks ----
