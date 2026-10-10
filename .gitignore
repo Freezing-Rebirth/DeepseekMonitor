@@ -12,6 +12,9 @@ sdkconfig.old
 managed_components/
 dependencies.lock
 
+# Written into the project directory by the build, for clangd.
+.clangd
+
 # ---------------------------------------------------------------------------
 # Research scratch space - not part of the published project
 #
