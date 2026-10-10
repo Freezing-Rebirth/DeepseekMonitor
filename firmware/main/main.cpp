@@ -17,6 +17,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <esp_log.h>
+#include <esp_private/esp_clk.h>
 #include <esp_timer.h>
 #include <esp_heap_caps.h>
 #include <esp_wifi.h>
@@ -239,12 +240,19 @@ static void lvgl_unlock()
 
 static void lvgl_task(void *)
 {
+    // On a reflective panel with no animation running there is nothing to redraw, and
+    // lv_timer_handler() reports 0 in that case. It used to be floored to 10 ms,
+    // which is 100 wakeups a second - about 8.6 million a day - purely to conclude
+    // that nothing had changed. On a battery-powered board that floor is one of the
+    // larger standing loads, so the idle period is a named constant rather than a
+    // magic number: raise it to trade a little latency on a value change for a
+    // longer runtime between charges.
     while (true) {
         lvgl_lock();
         uint32_t delay_ms = lv_timer_handler();
         lvgl_unlock();
-        if (delay_ms < 10)  delay_ms = 10;
-        if (delay_ms > 100) delay_ms = 100;
+        if (delay_ms < APP_LVGL_IDLE_MS)  delay_ms = APP_LVGL_IDLE_MS;
+        if (delay_ms > APP_LVGL_MAX_MS)   delay_ms = APP_LVGL_MAX_MS;
         vTaskDelay(pdMS_TO_TICKS(delay_ms));
     }
 }
@@ -522,14 +530,26 @@ extern "C" void app_main(void)
             last_hb = xTaskGetTickCount();
 #if DEBUG_LOGS
             const wifi_status_t w = wifi_get_status();
-            // The countdowns are logged with the heartbeat so the refresh schedule
-            // can be watched directly instead of inferred from the panel.
-            const uint32_t to_api = (uint32_t)((pdMS_TO_TICKS(APP_BALANCE_POLL_MS) -
-                                    (xTaskGetTickCount() - last_api)) / pdMS_TO_TICKS(1000));
-            const uint32_t to_ui = (uint32_t)((pdMS_TO_TICKS(APP_UI_REFRESH_MS) -
-                                    (xTaskGetTickCount() - last_ui)) / pdMS_TO_TICKS(1000));
-            ESP_LOGI(TAG, "alive: wifi=%d ip=%s rssi=%d psram=%u | next api in %us, ui in %us",
+            // The countdowns are logged with the heartbeat so the refresh schedule can
+            // be watched directly instead of inferred from the panel. A deadline
+            // already passed wraps to a huge TickType_t, so each is clamped rather
+            // than reported as ~4.29e6 seconds.
+            const TickType_t now_ticks = xTaskGetTickCount();
+            const TickType_t ui_left  = pdMS_TO_TICKS(APP_UI_REFRESH_MS) -
+                                        (now_ticks - last_ui);
+            const TickType_t api_left = pdMS_TO_TICKS(APP_BALANCE_POLL_MS) -
+                                        (now_ticks - last_api);
+            const uint32_t to_api = (uint32_t)((api_left > pdMS_TO_TICKS(APP_BALANCE_POLL_MS))
+                                                   ? 0 : api_left / pdMS_TO_TICKS(1000));
+            const uint32_t to_ui  = (uint32_t)((ui_left > pdMS_TO_TICKS(APP_UI_REFRESH_MS))
+                                                   ? 0 : ui_left / pdMS_TO_TICKS(1000));
+            // CPU frequency is logged because it is the single largest lever on
+            // average current when the radio is idle, and because a board whose
+            // battery drains faster than expected is usually one that is not entering
+            // light sleep.
+            ESP_LOGI(TAG, "alive: wifi=%d ip=%s rssi=%d cpu=%uMHz psram=%u | next api in %us, ui in %us",
                      (int)w.connected, w.ip, (int)w.rssi,
+                     (unsigned)(esp_clk_cpu_freq() / 1000000),
                      (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
                      (unsigned)to_api, (unsigned)to_ui);
 #endif

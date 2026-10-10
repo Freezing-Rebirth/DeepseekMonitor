@@ -254,13 +254,62 @@ when a top-up lands in the same window as spending.
 Three minutes keeps the top-up error under a percent while the radio wakes a fifth as often
 as it would at one minute.
 
-Two things matter far more to battery life than that interval:
+Three things matter far more to battery life than that interval:
 
 - **WiFi modem sleep** (`WIFI_PS_MIN_MODEM`, set in `wifi_prov.cpp`). Without it the radio
   stays in the receive chain permanently. The interval decides how often the radio wakes;
   this decides whether it sleeps at all.
 - **The control loop sleeps to its next deadline** rather than waking every second to
   compare tick counters. The floor is 250 ms, which is what keeps the BOOT button snappy.
+- **The LVGL task's idle period** (`APP_LVGL_IDLE_MS`, 250 ms). `lv_timer_handler()` returns
+  0 when nothing is animating, and that used to be floored to 10 ms — 100 wakeups a second,
+  about 8.6 million a day, to keep concluding that a static panel had not changed.
+
+`CONFIG_PM_ENABLE` is **not** set, so there is no automatic light sleep and no dynamic
+frequency scaling: the CPU sits at 160 MHz and drops only to the FreeRTOS idle task rather
+than into a low-power state. Enabling it is the largest remaining lever, at the cost of
+increased interrupt latency and coarser RTOS timers. It has not been tried, because this
+board is flashed and monitored over USB-Serial/JTAG and light sleep can interfere with that.
+
+### Battery gauge
+
+`battery_percent_from_volts()` in `battery.cpp` maps cell voltage to a percentage. Two
+corrections were needed over the mapping in the vendor's ESPHome example, which runs from
+2.5 V to 4.2 V in a straight line:
+
+| | Vendor example | This firmware |
+|---|---|---|
+| Empty | 2.5 V | **3.0 V** |
+| Shape | straight line | 18650 discharge curve, interpolated |
+
+Neither 2.5 V nor the ESP32-S3's brownout detector (left at its lowest step, 2.44 V) is what
+stops this board. The chip needs a regulated 3.3 V rail and the regulator needs roughly
+100–200 mV of headroom, so about **3.0 V is the floor**. With the vendor map the panel read
+about **29% at the moment the device died**, which is indistinguishable from a hardware
+fault — a board that apparently failed with a third of its charge left.
+
+The straight line is wrong through the middle too. A Li-ion cell sits on a plateau near
+3.7–3.9 V for most of its capacity, so a linear map barely moves where the charge actually
+goes:
+
+| Cell voltage | Vendor example | This firmware | Error |
+|---|---|---|---|
+| 4.107 V | 94% | 95% | −1 |
+| 3.920 V | 83% | 75% | +8 |
+| 3.800 V | 76% | 55% | +21 |
+| 3.700 V | 71% | 35% | +36 |
+| 3.549 V | 62% | 19% | +43 |
+| 3.000 V | 29% | 0% | +29 |
+
+Measured on this board, 4.107 V down to 3.549 V took 71.4 hours, so the gauge moves about
+25 points a day on the corrected curve — roughly four days from full. That figure is
+approximate in the pessimistic direction: the starting reading was taken with the USB
+attached and the charger holding the terminal up, so the true starting point was lower.
+Running it down unplugged is the only way to measure the real rate.
+
+The percentage is still only a restatement of the voltage. On the flat part of the curve a
+point is worth a large fraction of the remaining runtime, which is why the panel shows the
+voltage too when `DEBUG_LOGS` is on.
 
 NVS wear is worked out in `main/usage_ledger.cpp`: at five integer keys per poll and 126
 entries per NVS page, the 24 KB partition endures roughly 38 years at a three-minute

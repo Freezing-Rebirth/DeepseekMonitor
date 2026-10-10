@@ -43,3 +43,19 @@
 #define APP_BALANCE_POLL_MS   (3 * 60 * 1000)    // hit the API every 3 minutes
 #define APP_UI_REFRESH_MS     (60 * 1000)        // repaint once a minute
 #define APP_PRICE_POLL_MS     (10 * 1000)        // re-evaluate peak/trough often
+
+// How long the LVGL task waits when it has nothing to do, and the ceiling on how
+// long it will wait even when a timer asks for more.
+//
+// The panel is reflective and the UI is static between refreshes, so there is
+// genuinely nothing to redraw most of the time. lv_timer_handler() reports the delay
+// until its next timer and returns 0 when idle; the old floor of 10 ms turned that
+// into 100 wakeups a second, roughly 8.6 million a day, to keep concluding that
+// nothing had changed. This is the main standing load the firmware controls, and it
+// is the first thing to widen if runtime between charges matters more than the
+// latency of a single label change.
+//
+// 250 ms costs at most a quarter second of extra latency on a value change - on a
+// display that updates once a minute, that is invisible.
+#define APP_LVGL_IDLE_MS      250
+#define APP_LVGL_MAX_MS       500
