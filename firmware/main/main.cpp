@@ -18,6 +18,7 @@
 #include <freertos/task.h>
 #include <esp_log.h>
 #include <esp_private/esp_clk.h>
+#include <esp_cpu.h>
 #include <esp_timer.h>
 #include <esp_heap_caps.h>
 #include <esp_wifi.h>
@@ -543,13 +544,35 @@ extern "C" void app_main(void)
                                                    ? 0 : api_left / pdMS_TO_TICKS(1000));
             const uint32_t to_ui  = (uint32_t)((ui_left > pdMS_TO_TICKS(APP_UI_REFRESH_MS))
                                                    ? 0 : ui_left / pdMS_TO_TICKS(1000));
-            // CPU frequency is logged because it is the single largest lever on
-            // average current when the radio is idle, and because a board whose
-            // battery drains faster than expected is usually one that is not entering
-            // light sleep.
-            ESP_LOGI(TAG, "alive: wifi=%d ip=%s rssi=%d cpu=%uMHz psram=%u | next api in %us, ui in %us",
+            // How much of the wall time the CPU actually ran, rather than inferring it.
+            //
+            // xTaskGetTickCount() is supplied by the sleep timer, which the power
+            // management layer keeps in step with real time across light sleep.
+            // esp_timer_get_time() is the hardware timer, which stops while the CPU is
+            // asleep. The ratio of the two advances over the same interval is therefore
+            // the duty cycle: 100% means the CPU never slept.
+            //
+            // The CPU cycle counter would measure this directly, but it is 32 bits, so at
+            // 80 MHz it wraps every 54 seconds - less than the heartbeat interval - which
+            // is how the first attempt at this reported nonsense.
+            const int64_t us = esp_timer_get_time();
+            static TickType_t last_hb_ticks = 0;
+            static int64_t    last_hb_us    = 0;
+            uint32_t duty = 0;
+            if (last_hb_ticks != 0) {
+                const int64_t wall_us = (int64_t)(now_ticks - last_hb_ticks) *
+                                        (1000000LL / configTICK_RATE_HZ);
+                const int64_t hw_us = us - last_hb_us;
+                if (wall_us > 0 && hw_us >= 0 && hw_us <= wall_us) {
+                    duty = (uint32_t)(hw_us * 100 / wall_us);
+                }
+            }
+            last_hb_ticks = now_ticks;
+            last_hb_us = us;
+
+            ESP_LOGI(TAG, "alive: wifi=%d ip=%s rssi=%d cpu=%uMHz awake=%u%% psram=%u | next api in %us, ui in %us",
                      (int)w.connected, w.ip, (int)w.rssi,
-                     (unsigned)(esp_clk_cpu_freq() / 1000000),
+                     (unsigned)(esp_clk_cpu_freq() / 1000000), (unsigned)duty,
                      (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
                      (unsigned)to_api, (unsigned)to_ui);
 #endif

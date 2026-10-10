@@ -18,6 +18,29 @@ CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 # ---- FreeRTOS tick (LVGL timing) ----
 CONFIG_FREERTOS_HZ=1000
 
+# ---- Power management ----
+#
+# Without this the CPU only ever drops to the FreeRTOS idle task, at a fixed
+# frequency, and never enters a low-power state. Turning it on allows two things:
+#
+#   dynamic frequency scaling - the CPU drops to 80 MHz when there is no work,
+#   which is most of the time for a board that repaints once a minute.
+#
+#   automatic light sleep - with WiFi modem sleep already on, the system can sleep
+#   between DTIM beacons instead of spinning through the idle task.
+#
+# The costs are real and are why this is a separate change: interrupt latency goes
+# up, RTOS timers get coarser, and light sleep can interfere with USB-Serial/JTAG,
+# which is how this board is flashed and monitored. If flashing starts failing, or
+# the console goes quiet, this block is the first thing to remove.
+CONFIG_PM_ENABLE=y
+CONFIG_PM_DFS_INIT_AUTO=y
+CONFIG_FREERTOS_USE_TICKLESS_IDLE=y
+# Let the CPU scale down to 80 MHz. The 40 MHz step is not used: the flash and octal
+# PSRAM are both on 80 MHz dividers, and a lower CPU clock would put them out of
+# ratio for no useful saving.
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_80=y
+
 # ---- Task stacks ----
 # The main task performs the DeepSeek balance request, which runs a TLS handshake
 # and walks the CA bundle. The 3584-byte default overflowed the FreeRTOS stack
