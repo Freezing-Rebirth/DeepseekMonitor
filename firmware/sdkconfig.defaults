@@ -53,6 +53,21 @@ CONFIG_FREERTOS_USE_TICKLESS_IDLE=y
 # rather than higher.
 CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_80=y
 
+# ---- USB-Serial/JTAG console under power management ----
+#
+# The ESP32-S3's USB-Serial/JTAG peripheral cannot work while the chip is in light
+# sleep, or after waking from it (SOC has no USB_SERIAL_JTAG_SUPPORT_LIGHT_SLEEP).
+# With light sleep enabled and this option off, the board disappears from the host
+# the moment the application starts: the port is still enumerated, but opening it
+# fails with "the device attached to the system is not functioning" and no amount
+# of retrying helps, because the CPU sleeps again within milliseconds.
+#
+# This option makes the peripheral monitor its own connection and hold an
+# ESP_PM_NO_LIGHT_SLEEP lock for as long as a USB host is attached, so the console
+# and flashing keep working on the bench while the board still sleeps on battery.
+# It gates only automatic light sleep, which is the only kind this firmware uses.
+CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION=y
+
 # ---- Task stacks ----
 # The main task performs the DeepSeek balance request, which runs a TLS handshake
 # and walks the CA bundle. The 3584-byte default overflowed the FreeRTOS stack

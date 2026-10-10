@@ -381,10 +381,13 @@ extern "C" void app_main(void)
     // 40 MHz, and that is what the CPU idles at. With WiFi modem sleep already on,
     // light sleep is what the system falls into between DTIM beacons.
     //
-    // Light sleep does not engage while a USB host is attached: the USB-Serial/JTAG
-    // connection monitor holds an ESP_PM_NO_LIGHT_SLEEP lock for as long as the
-    // console is connected. A board on a cable therefore reports a 100% duty cycle in
-    // the heartbeat, and running it on battery is the only way to see the saving.
+    // Light sleep is held off while a USB host is attached, and on this chip that is
+    // not a nicety: the ESP32-S3's USB-Serial/JTAG peripheral cannot work during
+    // light sleep or after waking from it. Measured here: with the lock absent, the
+    // console port stops opening the moment this call takes effect, and the board has
+    // to be put into download mode by hand before it can be flashed again. The lock
+    // comes from CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION in sdkconfig.defaults. On battery
+    // no host is present, so it is not taken and light sleep runs.
     //
     // A failure is logged rather than fatal: DFS still stands, and a reboot loop on a
     // device with no console attached is worse than losing the feature quietly.

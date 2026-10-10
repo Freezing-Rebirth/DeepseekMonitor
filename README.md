@@ -174,9 +174,10 @@ Three things matter far more to battery life than the interval: **power manageme
 enabled, so the CPU idles at 40 MHz and drops into automatic light sleep between WiFi
 beacons instead of sitting at a fixed clock; **WiFi modem sleep** is enabled, so the radio
 is not sitting in the receive chain permanently; and the control loop sleeps to its next
-deadline instead of waking every second. Light sleep does not engage while the board is on a
-USB cable, because the console holds it awake. NVS wear at this cadence is around 38 years,
-worked out in `firmware/main/usage_ledger.cpp`.
+deadline instead of waking every second. The ESP32-S3's USB-Serial/JTAG peripheral cannot
+work in light sleep, so the console holds a lock that keeps light sleep off while a host is
+attached. NVS wear at this cadence is around 38 years, worked out in
+`firmware/main/usage_ledger.cpp`.
 
 ## Layout
 

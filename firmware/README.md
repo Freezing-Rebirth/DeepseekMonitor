@@ -271,10 +271,14 @@ Dynamic frequency scaling comes from those options alone, but automatic light sl
 not: the startup code calls `esp_pm_configure()` with the two frequencies and leaves
 `light_sleep_enable` false, so `app_main()` asks for it explicitly.
 
-One consequence is easy to misread. Light sleep does not engage while a USB host is
-attached, because the USB-Serial/JTAG connection monitor holds an `ESP_PM_NO_LIGHT_SLEEP`
-lock for as long as the console is connected. The `awake=` figure in the heartbeat therefore
-reads 100% on a cable, and the saving can only be measured on battery.
+Light sleep does not engage while a USB host is attached, and on this chip that is not a
+nicety. The ESP32-S3's USB-Serial/JTAG peripheral cannot work during light sleep or after
+waking from it, so both monitoring and flashing break without the lock: the port stays
+enumerated, but opening it fails with "the device attached to the system is not
+functioning". The lock comes from `CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION`, which has the
+peripheral hold an `ESP_PM_NO_LIGHT_SLEEP` lock for as long as a host is connected. With it
+in place the `awake=` figure in the heartbeat reads 100% on a cable, and the saving can only
+be measured on battery.
 
 ### Battery gauge
 
