@@ -19,9 +19,11 @@ static bool                      s_ready = false;
 // ---------------------------------------------------------------------------
 // The persisted copy of the last reading that worked.
 //
-// A reading is taken at every repaint, but the ADC is not always ours: with
-// light sleep enabled the conversions start failing with ESP_ERR_TIMEOUT and
-// keep failing, and then every repaint would show "BAT:--" - including the first
+// A reading is taken at every repaint, but the ADC is not always ours: with light
+// sleep enabled the conversions start failing with ESP_ERR_TIMEOUT from the
+// session's first sleep onwards - not the radio, and not the timing, which is what
+// it looked like until both configurations were measured side by side. Then every
+// repaint would show "BAT:--" - including the first
 // one five seconds after boot, before any reading has had a chance. Keeping the
 // last good value in NVS means a reboot repaints with the charge the device last
 // knew. See battery_restore() in battery.h.
@@ -34,6 +36,18 @@ static bool                      s_ready = false;
 static const char *BAT_NVS_NS  = "dsbat";
 static const char *KEY_PERCENT = "pct";
 static const char *KEY_MV      = "mv";     // cell millivolts, divider undone
+
+// How many times the ADC unit has had to be re-created since boot.
+//
+// With light sleep enabled on this board the first sleep breaks the conversion path and
+// every read then fails; reinit() below is the repair. A healthy board sitting at 1 after
+// its first sleep has recovered and is reading again; a number that keeps climbing means
+// the repair is not working and the panel is only ever repeating the last known charge.
+// Without it the only signal is the log, which is exactly what a sleeping board cannot
+// deliver - measured over JTAG, this counter is what separated the two outcomes.
+static uint32_t s_recoveries = 0;
+
+uint32_t battery_recoveries() { return s_recoveries; }
 
 static void persist_if_changed(const battery_reading_t &r)
 {
@@ -177,6 +191,27 @@ int battery_percent_from_volts(float volts)
     return kSocCurve[SOC_POINTS - 1].pct;
 }
 
+// Tear the ADC down and build it again.
+//
+// battery_init() claims the unit, configures the channel and installs the curve-fitting
+// calibration; running that a second time is what puts the conversion path back together
+// after light sleep has broken it. The handles are released in the right order (calibration
+// before unit) so nothing is leaked when this runs on every repaint.
+static void reinit()
+{
+    if (s_cali) {
+        adc_cali_delete_scheme_curve_fitting(s_cali);
+        s_cali = nullptr;
+    }
+    if (s_unit) {
+        adc_oneshot_del_unit(s_unit);
+        s_unit = nullptr;
+    }
+    s_cali_ok = false;
+    s_ready = false;
+    battery_init();
+}
+
 battery_reading_t battery_read()
 {
     battery_reading_t out = {};
@@ -211,8 +246,32 @@ battery_reading_t battery_read()
     }
 
     if (n == 0) {
-        ESP_LOGW(TAG, "ADC produced no sample in 32 attempts (last err %d)", last_err);
-        return out;
+        // Try to get the ADC back before giving up on it.
+        //
+        // On this chip light sleep is what takes it: from the session's first sleep
+        // onwards every conversion returns ESP_ERR_TIMEOUT, while WiFi, the panel and
+        // the ledger all carry on. Re-creating the unit re-runs the whole analogue
+        // setup (channel, attenuation, hardware calibration), so a sleeping board can
+        // still publish a number rather than only ever repeating the last known one.
+        // Measured cost when it never fires: nothing - it runs only after 32 failures.
+        ESP_LOGW(TAG, "ADC produced no sample in 32 attempts (last err %d); re-creating the unit",
+                 last_err);
+        s_recoveries++;
+        reinit();
+
+        acc = 0;
+        n = 0;
+        for (int i = 0; i < 16; i++) {
+            int raw = 0;
+            if (adc_oneshot_read(s_unit, ADC_CHANNEL_3, &raw) == ESP_OK) {
+                acc += raw;
+                n++;
+            }
+        }
+        if (n == 0) {
+            ESP_LOGW(TAG, "re-created ADC still produced no sample; keeping the last good reading");
+            return out;
+        }
     }
     const int raw_avg = (int)(acc / n);
 

@@ -26,13 +26,21 @@ typedef struct {
 void battery_init();
 battery_reading_t battery_read();
 
+// How many times the ADC had to be re-created since boot (see the note in battery.cpp).
+// Diagnostic only: it is the one number that says whether the repair after a light sleep
+// worked, on a board whose console is gone exactly when the answer matters.
+uint32_t battery_recoveries();
+
 // Last reading known to be good, carried across reboots.
 //
 // Within one session battery_read() already refuses to publish a failed read, so
-// the panel keeps its number. That does not survive a reboot: the ADC can be
-// unavailable for the whole of a session (observed: light sleep plus the radio
-// takes the ADC away and every conversion comes back ESP_ERR_TIMEOUT), and then
-// the panel shows "BAT:--" from the first repaint at roughly 5 s onwards.
+// the panel keeps its number. That does not survive a reboot, and this boot's reads
+// may never succeed at all: with light sleep enabled the ADC goes away from the
+// session's first sleep onwards, and every conversion then returns ESP_ERR_TIMEOUT
+// while the rest of the board stays healthy. Measured both ways - light sleep on:
+// three boots, not one reading published; light sleep off, nothing else changed:
+// every repaint reads 4.107 V -> 95%. Without a stored value the panel would read
+// "BAT:--" from the first repaint at roughly 5 s onwards.
 //
 // So the last good reading is persisted in NVS and restored before the first
 // repaint. Returns true when a stored reading was found; *out is filled with it,
