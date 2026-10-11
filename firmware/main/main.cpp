@@ -620,20 +620,34 @@ extern "C" void app_main(void)
             static TickType_t last_hb_ticks = 0;
             static int64_t    last_hb_us    = 0;
             uint32_t duty = 0;
+            bool duty_known = false;
             if (last_hb_ticks != 0) {
                 const int64_t wall_us = (int64_t)(now_ticks - last_hb_ticks) *
                                         (1000000LL / configTICK_RATE_HZ);
-                const int64_t hw_us = us - last_hb_us;
-                if (wall_us > 0 && hw_us >= 0 && hw_us <= wall_us) {
+                int64_t hw_us = us - last_hb_us;
+                // Clamp instead of discarding. The two clocks round against each other, so a
+                // fully awake interval can overshoot by a tick or two; the old code dropped
+                // those samples, which is the same branch as a sleeping chip, and reported
+                // awake=0% for three heartbeats in a row with light sleep switched off.
+                if (wall_us > 0) {
+                    if (hw_us < 0) hw_us = 0;
+                    if (hw_us > wall_us) hw_us = wall_us;
                     duty = (uint32_t)(hw_us * 100 / wall_us);
+                    duty_known = true;
                 }
             }
             last_hb_ticks = now_ticks;
             last_hb_us = us;
 
-            ESP_LOGI(TAG, "alive: wifi=%d ip=%s rssi=%d cpu=%uMHz awake=%u%% psram=%u | next api in %us, ui in %us",
+            // The first heartbeat has no baseline to compare against, so it says so rather
+            // than reporting a duty cycle of zero.
+            char duty_str[8];
+            if (duty_known) snprintf(duty_str, sizeof(duty_str), "%u%%", (unsigned)duty);
+            else            snprintf(duty_str, sizeof(duty_str), "--");
+
+            ESP_LOGI(TAG, "alive: wifi=%d ip=%s rssi=%d cpu=%uMHz awake=%s psram=%u | next api in %us, ui in %us",
                      (int)w.connected, w.ip, (int)w.rssi,
-                     (unsigned)(esp_clk_cpu_freq() / 1000000), (unsigned)duty,
+                     (unsigned)(esp_clk_cpu_freq() / 1000000), duty_str,
                      (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
                      (unsigned)to_api, (unsigned)to_ui);
 #endif
