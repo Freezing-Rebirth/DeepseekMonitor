@@ -345,9 +345,17 @@ static void build_ui_model(ui_model_t *m)
     snprintf(m->status_text, sizeof(m->status_text), "%s",
              s_state.status[0] ? s_state.status : "WAITING FOR DATA");
 
+    // The charge the device last knew. Set here rather than by the caller so the
+    // paint at boot has it too: that paint happens before the main loop's first
+    // repaint, and it used to leave these three at the memset above, which is why
+    // the panel read "BAT:--" until the first three-minute refresh.
+    m->battery_valid   = s_last_bat.valid;
+    m->battery_volts   = s_last_bat.volts;
+    m->battery_percent = s_last_bat.percent;
+
 #if DEMO_DATA
-    // Fixed sample data. The balance is chosen so the token line comes out at
-    // 1.06B: 148.52 CNY / 0.14 CNY per 1M tokens = 1060.86M tokens.
+    // Fixed sample data. The token line is derived from the balance and the peak
+    // cache-hit rate, so 148.52 CNY at 0.12 CNY per 1M tokens reads as 1.24B.
     m->clock_valid = true;
     m->now = 1779156000;            // 2026-05-19 10:00 Beijing (Tue), PEAK window
     m->wifi_connected = true;
@@ -434,6 +442,20 @@ extern "C" void app_main(void)
     app_config_init();
     ledger_init();
     battery_init();
+    // Read the cell once here, before wifi_start(). The ADC is not reliably ours
+    // after the radio and power management are up: conversions then come back
+    // ESP_ERR_TIMEOUT because the ADC1 lock is held elsewhere, and they keep doing
+    // so for the rest of the session - measured on this board, every repaint from
+    // five seconds onwards. This early read is what fills the cache the panel then
+    // repaints from; if even it fails, fall back to the value the last session
+    // stored, so the panel shows a charge rather than "BAT:--". See battery.cpp.
+    const battery_reading_t bat_at_boot = battery_read();
+    if (bat_at_boot.valid) {
+        s_last_bat = bat_at_boot;
+    } else if (battery_restore(&s_last_bat)) {
+        ESP_LOGW(TAG, "battery ADC unavailable at boot; showing the last stored %d%% (%.3f V)",
+                 s_last_bat.percent, (double)s_last_bat.volts);
+    }
     // Load any previously fetched holiday arrangement before the first tariff
     // classification, so a reboot keeps using last month's data rather than falling
     // back to the compiled table for a year it does not cover.
@@ -671,9 +693,6 @@ extern "C" void app_main(void)
 
             ui_model_t m;
             build_ui_model(&m);
-            m.battery_valid = s_last_bat.valid;
-            m.battery_volts = s_last_bat.volts;
-            m.battery_percent = s_last_bat.percent;
             lvgl_lock();
             ui_update(&m);
             ui_set_heartbeat(true);

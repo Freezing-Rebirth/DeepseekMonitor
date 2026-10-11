@@ -26,6 +26,19 @@ typedef struct {
 void battery_init();
 battery_reading_t battery_read();
 
+// Last reading known to be good, carried across reboots.
+//
+// Within one session battery_read() already refuses to publish a failed read, so
+// the panel keeps its number. That does not survive a reboot: the ADC can be
+// unavailable for the whole of a session (observed: light sleep plus the radio
+// takes the ADC away and every conversion comes back ESP_ERR_TIMEOUT), and then
+// the panel shows "BAT:--" from the first repaint at roughly 5 s onwards.
+//
+// So the last good reading is persisted in NVS and restored before the first
+// repaint. Returns true when a stored reading was found; *out is filled with it,
+// volts and percent only (raw and pin_mv are per-conversion and are not restored).
+bool battery_restore(battery_reading_t *out);
+
 // Voltage -> state of charge, using a 18650 discharge curve and the real empty point
 // of about 3.0 V rather than the 2.5 V the vendor example uses.
 //

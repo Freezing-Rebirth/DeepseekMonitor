@@ -4,6 +4,7 @@
 #include <esp_log.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <nvs.h>
 #include <esp_adc/adc_oneshot.h>
 #include <esp_adc/adc_cali.h>
 #include <esp_adc/adc_cali_scheme.h>
@@ -14,6 +15,68 @@ static adc_oneshot_unit_handle_t s_unit = nullptr;
 static adc_cali_handle_t         s_cali = nullptr;
 static bool                      s_cali_ok = false;
 static bool                      s_ready = false;
+
+// ---------------------------------------------------------------------------
+// The persisted copy of the last reading that worked.
+//
+// A reading is taken at every repaint, but the ADC is not always ours: with
+// light sleep enabled the conversions start failing with ESP_ERR_TIMEOUT and
+// keep failing, and then every repaint would show "BAT:--" - including the first
+// one five seconds after boot, before any reading has had a chance. Keeping the
+// last good value in NVS means a reboot repaints with the charge the device last
+// knew. See battery_restore() in battery.h.
+//
+// Two entries in their own namespace. The write happens only when the percentage
+// steps, so the traffic is a few writes a day - the same order as the ledger's
+// five keys every five minutes, whose flash budget is worked out in
+// usage_ledger.cpp and comes to centuries.
+// ---------------------------------------------------------------------------
+static const char *BAT_NVS_NS  = "dsbat";
+static const char *KEY_PERCENT = "pct";
+static const char *KEY_MV      = "mv";     // cell millivolts, divider undone
+
+static void persist_if_changed(const battery_reading_t &r)
+{
+    if (!r.valid) return;
+
+    nvs_handle_t h;
+    if (nvs_open(BAT_NVS_NS, NVS_READWRITE, &h) != ESP_OK) return;
+
+    uint8_t stored_pct = 0;
+    const bool have = (nvs_get_u8(h, KEY_PERCENT, &stored_pct) == ESP_OK);
+    if (!have || stored_pct != (uint8_t)r.percent) {
+        // The cell voltage sits on a plateau for hours and the ADC wanders by a
+        // count or two, so an unconditional write every minute would turn a
+        // rounding wobble into flash traffic that carries no information.
+        nvs_set_u8(h, KEY_PERCENT, (uint8_t)r.percent);
+        nvs_set_u32(h, KEY_MV, (uint32_t)(r.volts * 1000.0f + 0.5f));
+        nvs_commit(h);
+        ESP_LOGI(TAG, "stored %d%% (%.3f V) for the next boot",
+                 r.percent, (double)r.volts);
+    }
+    nvs_close(h);
+}
+
+bool battery_restore(battery_reading_t *out)
+{
+    if (!out) return false;
+    *out = {};
+
+    nvs_handle_t h;
+    if (nvs_open(BAT_NVS_NS, NVS_READONLY, &h) != ESP_OK) return false;
+
+    uint8_t  pct = 0;
+    uint32_t mv  = 0;
+    const bool ok = (nvs_get_u8(h, KEY_PERCENT, &pct) == ESP_OK) &&
+                    (nvs_get_u32(h, KEY_MV, &mv) == ESP_OK);
+    nvs_close(h);
+    if (!ok) return false;
+
+    out->valid   = true;
+    out->percent = (int)pct;
+    out->volts   = (float)mv / 1000.0f;
+    return true;
+}
 
 void battery_init()
 {
@@ -171,5 +234,6 @@ battery_reading_t battery_read()
     out.volts = (float)pin_mv / 1000.0f * BAT_DIVIDER;
     out.percent = battery_percent_from_volts(out.volts);
 
+    persist_if_changed(out);
     return out;
 }
