@@ -8,13 +8,19 @@
 #define BEIJING_OFFSET_SEC (8 * 3600)
 
 // ---------------------------------------------------------------------------
-// Official DeepSeek price table, CNY per 1M tokens.
+// DeepSeek price table, CNY per 1M tokens.
 // Peak values are published; off-peak is exactly half.
+//
+// The one exception is the cache-hit row for deepseek-flash. That rate is what the
+// panel derives both the token equivalent and the BASIS line from, and the figure in
+// use is a conversion done by hand rather than a published number: 0.12 CNY per 1M
+// tokens at peak, 0.06 off-peak. Raising it lowers the token equivalent by the same
+// factor, since the two are the same rate.
 // ---------------------------------------------------------------------------
 static const price_pair_t kTable[2][3] = {
     // deepseek-flash
     {
-        /* cache hit  */ {0.04f, 0.02f},
+        /* cache hit  */ {0.12f, 0.06f},
         /* cache miss */ {2.00f, 1.00f},
         /* output     */ {8.00f, 4.00f},
     },

@@ -42,8 +42,8 @@ typeface (**Silkscreen**), the measured font sizes, and the block positions.
 ```
 ■ DEEPSEEK                 WIFI:OK BAT:94% 12:04 UTC+8
 TOTAL AVAILABLE FUNDS                        RUNWAY: 6D
-¥2.83                                    141.50M TOKENS
-BASIS: ¥0.02/M                             BURN: ¥0.46/D
+¥2.83                                     47.17M TOKENS
+BASIS: ¥0.06/M                             BURN: ¥0.46/D
 ───────────────────────────────────────────────────────
                        TROUGH
                     NEXT: 10-08 09:00
