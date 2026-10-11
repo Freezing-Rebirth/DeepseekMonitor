@@ -175,6 +175,34 @@ esp_err_t RlcdPanel::Init()
     ControllerInit();
     PushFrame();
 
+    // ---- keep the panel's control lines alive through light sleep ----
+    //
+    // With CONFIG_PM_SLP_DISABLE_GPIO (the default) every light sleep entry runs
+    // esp_sleep_config_gpio_isolate(), which sets all pins to GPIO_MODE_DISABLE and
+    // floating for the duration of the sleep. The panel stays powered throughout, so
+    // from the ST7305's side a floating CS or RST is noise arriving on a live input,
+    // and a rare coincidence gets latched as a command - or as a reset. Either way the
+    // display is left off, and pushing frame data into it does not bring it back: only
+    // ControllerInit() does, which is why the panel stays dark until the board is
+    // power cycled. Seen once after roughly 15 hours on battery, which is tens of
+    // thousands of sleep entries; with USB attached the light sleep lock is held, so
+    // it cannot happen there at all.
+    //
+    // gpio_sleep_sel_dis() clears a pin's sleep-select bit, so the automatic switch to
+    // the sleep configuration is skipped for it and it keeps its level. CS is the one
+    // that matters, since it sits high between transactions and the panel ignores the
+    // rest of the bus while it does, but holding RST, DC, SCK and MOSI too costs
+    // nothing. This affects sleep only: every transfer drives the pins as before.
+    const gpio_num_t panel_pins[] = {RLCD_PIN_CS, RLCD_PIN_RST, RLCD_PIN_DC,
+                                     RLCD_PIN_SCK, RLCD_PIN_MOSI};
+    for (gpio_num_t pin : panel_pins) {
+        const esp_err_t hold_err = gpio_sleep_sel_dis(pin);
+        if (hold_err != ESP_OK) {
+            ESP_LOGW(TAG, "GPIO %d cannot be kept out of sleep isolation: %s",
+                     (int)pin, esp_err_to_name(hold_err));
+        }
+    }
+
     // ---- LVGL ----
     lv_init();
 
