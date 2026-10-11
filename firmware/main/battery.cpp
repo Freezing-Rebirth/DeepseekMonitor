@@ -19,10 +19,13 @@ static bool                      s_ready = false;
 // ---------------------------------------------------------------------------
 // The persisted copy of the last reading that worked.
 //
-// A reading is taken at every repaint, but the ADC is not always ours: with light
-// sleep enabled the conversions start failing with ESP_ERR_TIMEOUT from the
-// session's first sleep onwards - not the radio, and not the timing, which is what
-// it looked like until both configurations were measured side by side. Then every
+// A reading is taken at every repaint, but the ADC is not always ours: a session can
+// pass with every conversion returning ESP_ERR_TIMEOUT while the unit and the
+// calibration stay intact and the rest of the board works. Neither the radio nor light
+// sleep explains that with evidence behind it - light sleep was the suspect and did not
+// reproduce once this build also read the cell at boot - so the reading is taken at boot
+// before anything else can get in the way, and reinit() repairs a later failure instead
+// of assuming one. Without a cached value every
 // repaint would show "BAT:--" - including the first
 // one five seconds after boot, before any reading has had a chance. Keeping the
 // last good value in NVS means a reboot repaints with the charge the device last
@@ -248,12 +251,14 @@ battery_reading_t battery_read()
     if (n == 0) {
         // Try to get the ADC back before giving up on it.
         //
-        // On this chip light sleep is what takes it: from the session's first sleep
-        // onwards every conversion returns ESP_ERR_TIMEOUT, while WiFi, the panel and
-        // the ledger all carry on. Re-creating the unit re-runs the whole analogue
-        // setup (channel, attenuation, hardware calibration), so a sleeping board can
-        // still publish a number rather than only ever repeating the last known one.
-        // Measured cost when it never fires: nothing - it runs only after 32 failures.
+        // A session can pass with every conversion returning ESP_ERR_TIMEOUT while the
+        // unit, the calibration and the rest of the board are all fine. The trigger for
+        // that is not established: light sleep was the suspect here and did not reproduce
+        // once this build also read the cell at boot. Re-creating the unit re-runs the
+        // whole analogue setup - channel, attenuation, hardware calibration - which is the
+        // cheap thing to try before giving up on the number. It only ever runs after 32
+        // consecutive failures, and battery_recoveries() says whether it worked. That path
+        // has not had to run yet, so it is a net rather than a fix.
         ESP_LOGW(TAG, "ADC produced no sample in 32 attempts (last err %d); re-creating the unit",
                  last_err);
         s_recoveries++;

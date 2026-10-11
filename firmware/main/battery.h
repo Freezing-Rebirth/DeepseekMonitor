@@ -34,13 +34,13 @@ uint32_t battery_recoveries();
 // Last reading known to be good, carried across reboots.
 //
 // Within one session battery_read() already refuses to publish a failed read, so
-// the panel keeps its number. That does not survive a reboot, and this boot's reads
-// may never succeed at all: with light sleep enabled the ADC goes away from the
-// session's first sleep onwards, and every conversion then returns ESP_ERR_TIMEOUT
-// while the rest of the board stays healthy. Measured both ways - light sleep on:
-// three boots, not one reading published; light sleep off, nothing else changed:
-// every repaint reads 4.107 V -> 95%. Without a stored value the panel would read
-// "BAT:--" from the first repaint at roughly 5 s onwards.
+// the panel keeps its number. That does not survive a reboot, and a boot's reads can
+// fail for a whole session: adc_oneshot_read() returning ESP_ERR_TIMEOUT on every
+// attempt with the unit claimed and the calibration installed, while WiFi, the ledger
+// and the panel all carry on. The trigger for that is not established - light sleep
+// was blamed and did not stand up (see the note in battery.cpp), so treat the repair
+// there as the thing that keeps the panel honest and the counter as the way to tell
+// whether the fault is back.
 //
 // So the last good reading is persisted in NVS and restored before the first
 // repaint. Returns true when a stored reading was found; *out is filled with it,
