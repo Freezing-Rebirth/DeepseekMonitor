@@ -372,6 +372,12 @@ static void build_ui_model(ui_model_t *m)
 // ---------------------------------------------------------------------------
 extern "C" void app_main(void)
 {
+    // Everything else drops to WARN via CONFIG_LOG_DEFAULT_LEVEL (the release config).
+    // These two lines are the exception: without them a board cannot be told apart from
+    // one carrying an older image of the same commit, which is the most useful thing the
+    // console ever printed.
+    esp_log_level_set("app_init", ESP_LOG_INFO);
+
     ESP_LOGI(TAG, "DeepSeek Monitor starting");
     ESP_LOGI(TAG, "PSRAM free at boot: %u bytes",
              (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));

@@ -166,6 +166,9 @@ Off-peak prices are exactly half of peak. Holidays and compensatory workdays for
 | 3 minutes | API poll, and one ledger update |
 | 1 minute | Repaint: clock, battery, tariff state |
 
+One battery reading is also taken at start-up, before the radio comes up, and the last good
+reading is kept in NVS across reboots - see the battery notes in `firmware/README.md`.
+
 The poll interval trades power against accuracy: each poll costs a TLS handshake and a radio
 wake-up, while a shorter interval means less consumption is lost when a top-up lands in the
 same window as spending. At three minutes that loss stays under a percent.
@@ -175,8 +178,12 @@ enabled, so the CPU idles at 40 MHz and drops into automatic light sleep between
 beacons instead of sitting at a fixed clock; **WiFi modem sleep** is enabled, so the radio
 is not sitting in the receive chain permanently; and the control loop sleeps to its next
 deadline instead of waking every second. The ESP32-S3's USB-Serial/JTAG peripheral cannot
-work in light sleep, so the console holds a lock that keeps light sleep off while a host is
-attached. NVS wear at this cadence is around 38 years, worked out in
+work in light sleep, so `CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION` has it hold a lock that keeps
+light sleep off - but only while the host keeps the connection alive. A host that suspends the
+idle device releases that lock, the chip sleeps, and the USB console then needs a cold boot
+(unplug, long-press PWR, short-press) to answer again. That is a tethered-development cost, not
+a battery one: on the cell the chip sleeps normally, which a one-hour run with the battery
+repair counter at zero confirmed. NVS wear at this cadence is around 38 years, worked out in
 `firmware/main/usage_ledger.cpp`.
 
 ## Layout

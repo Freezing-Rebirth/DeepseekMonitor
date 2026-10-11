@@ -18,7 +18,9 @@
 //
 // Event-driven lines are deliberately NOT gated by this. Connection results,
 // disconnects with their reason, balance fetches, tariff-state changes and every
-// error still print, so a release build stays diagnosable.
+// error print on their own - but most of those are INFO, and the release config sets
+// CONFIG_LOG_DEFAULT_LEVEL to WARN, which drops them. See the note in firmware/README.md;
+// app_main() raises the app_init tag back to INFO so the boot still identifies itself.
 #define DEBUG_LOGS 0
 
 // Set to 1 to ignore the cached holiday verdict on the next daily check, so a change

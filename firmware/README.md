@@ -254,6 +254,13 @@ when a top-up lands in the same window as spending.
 Three minutes keeps the top-up error under a percent while the radio wakes a fifth as often
 as it would at one minute.
 
+The battery is read once at start-up as well, before `wifi_start()`, and the last good reading
+is stored in NVS and restored into the model before the first paint. That is what keeps the
+status bar honest: a session where the ADC cannot produce a sample then shows the charge the
+device last knew instead of a placeholder, and `battery_read()` tries to re-create the ADC
+unit first (its attempts are counted by `battery_recoveries()`, which is the only signal
+available on a board whose console is exactly what is missing).
+
 Three things matter far more to battery life than that interval:
 
 - **WiFi modem sleep** (`WIFI_PS_MIN_MODEM`, set in `wifi_prov.cpp`). Without it the radio
@@ -271,14 +278,19 @@ Dynamic frequency scaling comes from those options alone, but automatic light sl
 not: the startup code calls `esp_pm_configure()` with the two frequencies and leaves
 `light_sleep_enable` false, so `app_main()` asks for it explicitly.
 
-Light sleep does not engage while a USB host is attached, and on this chip that is not a
-nicety. The ESP32-S3's USB-Serial/JTAG peripheral cannot work during light sleep or after
-waking from it, so both monitoring and flashing break without the lock: the port stays
-enumerated, but opening it fails with "the device attached to the system is not
-functioning". The lock comes from `CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION`, which has the
-peripheral hold an `ESP_PM_NO_LIGHT_SLEEP` lock for as long as a host is connected. With it
-in place the `awake=` figure in the heartbeat reads 100% on a cable, and the saving can only
-be measured on battery.
+Light sleep is held off while a USB host is attached, and on this chip that is not a nicety.
+The ESP32-S3's USB-Serial/JTAG peripheral cannot work during light sleep or after waking from
+it, so once it sleeps both monitoring and flashing break: the port stays enumerated, but
+opening it fails with "the device attached to the system is not functioning". The lock comes
+from `CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION`, which has the peripheral hold an
+`ESP_PM_NO_LIGHT_SLEEP` lock - but its connection test is the USB start-of-frame stream, so a
+host that suspends the idle device releases the lock and the chip sleeps anyway. Recovery is a
+cold boot with the cell cut: unplug, long-press PWR, short-press PWR.
+
+The heartbeat's `awake=` figure is how to watch this, and it measures properly now: it used to
+discard any sample whose two clocks disagreed by a rounding error, which reported 0% for a chip
+that had not slept at all. On a cable it sits near 100%; the saving is what happens on battery,
+where a one-hour run showed the gauge reading normally at every repaint while the chip slept.
 
 ### Battery gauge
 
@@ -394,10 +406,16 @@ in `main.cpp`. All are `0` in a release build.
 | `BATTERY_REPORT_RAW` | Prints the raw ADC counts and pin voltage for each battery reading |
 | `BRINGUP_SELFTEST` | Draws the raw panel bring-up pattern instead of the UI |
 
-`DEBUG_LOGS` deliberately does **not** gate event-driven output. Connection results,
-disconnects with their reason, balance fetches, tariff-state changes and every error
-still print, which is why the console itself is left enabled rather than disabled: it
-is the only diagnostic channel, and turning it off saves nothing.
+`DEBUG_LOGS` deliberately does **not** gate event-driven output: connection results,
+disconnects with their reason, balance fetches, tariff-state changes and every error print on
+their own. Note that most of those are `INFO`, and the release config sets
+`CONFIG_LOG_DEFAULT_LEVEL_WARN` - with `CONFIG_LOG_MAXIMUM_LEVEL` equal to it, so the strings
+are stripped from the image - which drops them. What survives at `WARN` is every warning and
+error, plus two boot-identification lines: `app_main()` raises the `app_init` tag back to
+`INFO`, because telling one build of a commit apart from another is the most useful thing the
+console ever printed. Raise `CONFIG_LOG_DEFAULT_LEVEL` back to `INFO` to see the events again.
+The console itself stays enabled either way: it is the only diagnostic channel, and disabling
+it saves nothing.
 
 ## Licence
 
