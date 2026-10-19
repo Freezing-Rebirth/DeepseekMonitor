@@ -268,8 +268,16 @@ void ui_update(const ui_model_t *m)
     snprintf(txt, sizeof(txt), "WIFI:%s", wifi_link_text());
     lv_label_set_text(g.st_wifi, txt);
 
-    if (m->battery_valid) snprintf(txt, sizeof(txt), "BAT:%d%%", m->battery_percent);
-    else                  snprintf(txt, sizeof(txt), "BAT:--");
+    if (!m->battery_valid) {
+        snprintf(txt, sizeof(txt), "BAT:--");
+    } else {
+        switch (m->battery_state) {
+        case BAT_STATE_CHARGING: snprintf(txt, sizeof(txt), "BAT:CH"); break;
+        case BAT_STATE_FULL:     snprintf(txt, sizeof(txt), "BAT:FC"); break;
+        case BAT_STATE_LOW:      snprintf(txt, sizeof(txt), "BAT:LB"); break;
+        default:                 snprintf(txt, sizeof(txt), "BAT:%d%%", m->battery_percent); break;
+        }
+    }
     lv_label_set_text(g.st_bat, txt);
 
     if (m->clock_valid) {

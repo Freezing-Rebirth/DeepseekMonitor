@@ -222,15 +222,41 @@ int battery_percent_from_volts(float volts)
 #define GAUGE_SAG_DOWN_PCT     2   // relaxation when the charger is removed, above ADC noise
 #define GAUGE_CHARGING_MAX_SEC (8 * 3600)
 
+// "Full" cannot be the terminal reaching 4.2 V: that is where the constant-current phase ends,
+// with the cell still around 80%. What the charger's termination looks like from here is the
+// voltage sitting still at the top, so require the high level *and* no rise for ten minutes -
+// the constant-voltage plateau is flat to a couple of millivolts, less than one point on this
+// curve, so ten samples are enough to see it. The cell is about 85% at that point, not 100%:
+// the rest is the taper, which the terminal voltage cannot show. LB is the other end - 5% is
+// about 3.2 V, roughly the last half hour before the 3.0 V floor.
+#define BAT_FULL_PCT           98
+#define BAT_FULL_PLATEAU_SEC   (10 * 60)
+#define BAT_LOW_PCT            5
+
 typedef struct {
     bool    have_baseline;
     bool    charging;
+    bool    full;               // latched while charging, so a top-up dip does not flicker
     int     published_pct;
     int     last_raw_pct;
     int64_t charging_since_us;
+    int64_t last_rise_us;
+    battery_state_t state;
 } gauge_state_t;
 
 static gauge_state_t s_gauge;
+
+// What the status bar shows, derived from the gauge's state.
+static void gauge_update_state(void)
+{
+    if (s_gauge.charging) {
+        s_gauge.state = s_gauge.full ? BAT_STATE_FULL : BAT_STATE_CHARGING;
+    } else if (s_gauge.published_pct <= BAT_LOW_PCT) {
+        s_gauge.state = BAT_STATE_LOW;
+    } else {
+        s_gauge.state = BAT_STATE_NORMAL;
+    }
+}
 
 static int gauge_apply(int raw_pct, int64_t now_us)
 {
@@ -246,11 +272,13 @@ static int gauge_apply(int raw_pct, int64_t now_us)
             s_gauge.published_pct      = stored.percent;
             s_gauge.charging           = true;
             s_gauge.charging_since_us  = now_us;
+            s_gauge.last_rise_us       = now_us;
             ESP_LOGW(TAG, "booted with a charger on the terminal (%d%% -> %d%%); holding %d%%",
                      stored.percent, raw_pct, s_gauge.published_pct);
         } else {
             s_gauge.published_pct = raw_pct;
         }
+        gauge_update_state();
         return s_gauge.published_pct;
     }
 
@@ -260,6 +288,7 @@ static int gauge_apply(int raw_pct, int64_t now_us)
         if (delta >= GAUGE_STEP_UP_PCT) {
             s_gauge.charging          = true;
             s_gauge.charging_since_us = now_us;
+            s_gauge.last_rise_us      = now_us;
             ESP_LOGW(TAG, "terminal jumped %d points (a charger); holding %d%% until it is off",
                      delta, s_gauge.published_pct);
         } else {
@@ -278,12 +307,26 @@ static int gauge_apply(int raw_pct, int64_t now_us)
                          GAUGE_CHARGING_MAX_SEC / 3600, raw_pct);
             }
             s_gauge.charging      = false;
+            s_gauge.full          = false;
             s_gauge.published_pct = raw_pct;
+        } else {
+            // Still lifted: note when the terminal last climbed, which is what separates the
+            // constant-current phase from the constant-voltage plateau at the top.
+            if (raw_pct > s_gauge.last_raw_pct) s_gauge.last_rise_us = now_us;
+            if (!s_gauge.full && raw_pct >= BAT_FULL_PCT &&
+                (now_us - s_gauge.last_rise_us) >= (int64_t)BAT_FULL_PLATEAU_SEC * 1000000) {
+                s_gauge.full = true;
+                ESP_LOGI(TAG, "terminal has sat at %d%% without rising for %d min; full",
+                         raw_pct, BAT_FULL_PLATEAU_SEC / 60);
+            }
         }
-        // otherwise: still lifted, keep holding what the user already saw
     }
 
     s_gauge.last_raw_pct = raw_pct;
+
+    // A charger wins over "low": the useful fact is that it is charging, not that the
+    // held number is small.
+    gauge_update_state();
     return s_gauge.published_pct;
 }
 
@@ -393,6 +436,7 @@ battery_reading_t battery_read()
 
     // Publish the gauge's answer, not the terminal's: see the note above.
     out.percent = gauge_apply(out.raw_percent, esp_timer_get_time());
+    out.state   = s_gauge.state;
 
     persist_if_changed(out);
     return out;

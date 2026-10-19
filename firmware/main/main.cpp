@@ -352,6 +352,7 @@ static void build_ui_model(ui_model_t *m)
     m->battery_valid   = s_last_bat.valid;
     m->battery_volts   = s_last_bat.volts;
     m->battery_percent = s_last_bat.percent;
+    m->battery_state   = s_last_bat.state;
 
 #if DEMO_DATA
     // Fixed sample data. The token line is derived from the balance and the peak

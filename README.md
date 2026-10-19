@@ -53,7 +53,9 @@ A 400×300 canvas in three bands:
 
 | Band | Height | Contents |
 |---|---|---|
-| Status bar | 26 px | Device mark, WiFi and battery state, clock in Beijing time |
+| Status bar | 26 px | Device mark, WiFi and battery state, clock in Beijing time. The
+battery field reads `BAT:CH` while charging, `BAT:FC` once the terminal has settled at
+the top, `BAT:LB` below 5%, and the percentage otherwise |
 | Balance | 124 px | Balance, token equivalent, runway, burn rate, the rate the estimate used |
 | Pricing | 150 px | Tariff state, and the time of the next change |
 

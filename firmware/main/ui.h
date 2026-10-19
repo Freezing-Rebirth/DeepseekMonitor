@@ -4,6 +4,7 @@
 #include <time.h>
 #include "lvgl.h"
 #include "pricing.h"
+#include "battery.h"
 
 // ---------------------------------------------------------------------------
 // Panel UI.
@@ -40,6 +41,7 @@ typedef struct {
     bool   battery_valid;
     float  battery_volts;
     int    battery_percent;
+    battery_state_t battery_state;
 
     bool   balance_valid;
     float  balance_cny;

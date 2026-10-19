@@ -15,6 +15,17 @@
 // BATTERY_REPORT_RAW in main.cpp for the measurement mode that prints them.
 // ---------------------------------------------------------------------------
 
+// What the status bar says about the cell. The percentage is not shown for CH/FC, because
+// while a charger is on the terminal there is no honest number to show: the gauge holds the
+// last resting value and the terminal is lifted, so the state is the useful fact. LB replaces
+// the percentage near the shutdown voltage, where a number between 0 and 5 is noise.
+typedef enum {
+    BAT_STATE_NORMAL = 0,   // "BAT:57%"
+    BAT_STATE_CHARGING,     // "BAT:CH" - a charger is lifting the terminal
+    BAT_STATE_FULL,         // "BAT:FC" - charging, and the terminal has stopped rising at the top
+    BAT_STATE_LOW,          // "BAT:LB" - at rest and nearly empty
+} battery_state_t;
+
 typedef struct {
     bool  valid;
     float volts;     // cell voltage after the divider is undone
@@ -22,6 +33,7 @@ typedef struct {
     int   raw_percent;  // 0..100 straight from the terminal; differs while charging (see below)
     int   raw;       // averaged ADC counts, before any conversion
     int   pin_mv;    // pin voltage after calibration, before the divider
+    battery_state_t state;
 } battery_reading_t;
 
 void battery_init();

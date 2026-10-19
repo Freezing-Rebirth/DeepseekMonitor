@@ -344,6 +344,16 @@ moment the cable comes out, and nothing inflated while it is in. The persisted v
 published one, so a device charged while switched off recognises the lifted terminal at boot
 and holds what the user last saw; eight hours of a terminal that never sags is the bail-out.
 
+The status bar then shows a state rather than a number, because while a charger is on the cell
+there is no honest number to show: `BAT:CH` while the terminal is lifted and climbing,
+`BAT:FC` once it has sat at the top without rising for ten minutes, and `BAT:LB` at rest below
+5% (about 3.2 V, the last half hour before the 3.0 V floor). "Full" cannot mean the cell is at
+100%: the terminal hits 4.2 V at the end of the constant-current phase with the cell around
+80%, and the remaining taper is invisible from the voltage - the plateau is flat to a couple of
+millivolts, under one point on this curve, which is what makes ten minutes enough to see it.
+A charger outranks LB, since the useful fact on a nearly empty cell that has just been plugged
+in is that it is charging.
+
 NVS wear is worked out in `main/usage_ledger.cpp`: at five integer keys per poll and 126
 entries per NVS page, the 24 KB partition endures roughly 38 years at a three-minute
 interval. Batching those writes would change nothing, because the totals only move when a
