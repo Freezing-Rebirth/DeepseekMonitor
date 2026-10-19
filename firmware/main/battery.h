@@ -18,7 +18,8 @@
 typedef struct {
     bool  valid;
     float volts;     // cell voltage after the divider is undone
-    int   percent;   // 0..100
+    int   percent;   // 0..100, as published: the terminal reading unless a charger is lifting it
+    int   raw_percent;  // 0..100 straight from the terminal; differs while charging (see below)
     int   raw;       // averaged ADC counts, before any conversion
     int   pin_mv;    // pin voltage after calibration, before the divider
 } battery_reading_t;

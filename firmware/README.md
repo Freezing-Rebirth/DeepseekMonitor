@@ -332,6 +332,18 @@ The percentage is still only a restatement of the voltage. On the flat part of t
 point is worth a large fraction of the remaining runtime, which is why the panel shows the
 voltage too when `DEBUG_LOGS` is on.
 
+**A charger makes that voltage lie.** Plugging external power in lifts the cell terminal from
+its resting voltage to the charging voltage in one step - measured on this board, 37% to 67%
+inside a single repaint interval, about 200 mV - and it stays lifted for hours while current
+flows. The published percentage therefore does not follow a step. A jump of
+`GAUGE_STEP_UP_PCT` (6) points inside one interval means a charger appeared, and the last
+published value is held; a fall of `GAUGE_SAG_DOWN_PCT` (2) points means the terminal is back
+on its open-circuit voltage, which is what the curve is calibrated for, and the reading is
+published again. A cell that really was charged to full therefore shows the new figure the
+moment the cable comes out, and nothing inflated while it is in. The persisted value is the
+published one, so a device charged while switched off recognises the lifted terminal at boot
+and holds what the user last saw; eight hours of a terminal that never sags is the bail-out.
+
 NVS wear is worked out in `main/usage_ledger.cpp`: at five integer keys per poll and 126
 entries per NVS page, the 24 KB partition endures roughly 38 years at a three-minute
 interval. Batching those writes would change nothing, because the totals only move when a

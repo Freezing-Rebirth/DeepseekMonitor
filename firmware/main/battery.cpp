@@ -2,6 +2,7 @@
 #include "board_rlcd.h"
 
 #include <esp_log.h>
+#include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <nvs.h>
@@ -194,6 +195,98 @@ int battery_percent_from_volts(float volts)
     return kSocCurve[SOC_POINTS - 1].pct;
 }
 
+// ---------------------------------------------------------------------------
+// The charger makes the terminal voltage lie.
+//
+// The curve above is calibrated for a cell at rest. Plugging a charger in lifts the terminal
+// from the open-circuit voltage to the charging voltage in one step - measured on this board,
+// 37% to 67% inside a single repaint interval, a lift of about 200 mV - and it stays lifted
+// while current flows, which is hours. Following that number would tell the reader the cell
+// had gained a third of its charge by being plugged in.
+//
+// So the published value follows this rule:
+//
+//   step up (GAUGE_STEP_UP_PCT in one interval) -> a charger just appeared. Hold the last
+//       published value for as long as the terminal stays lifted.
+//   a fall of GAUGE_SAG_DOWN_PCT -> the charger has been removed and the terminal is back on
+//       its open-circuit voltage, which is what the curve is calibrated for. Publish it. A cell
+//       that really was charged to full therefore shows the new value the moment the cable
+//       comes out, and nothing while it is in.
+//
+// A charge that completes while the device is off is handled by the same rule with the stored
+// value as the baseline: the first reading after boot is a step above it, so it is held until
+// the charger goes. GAUGE_CHARGING_MAX_SEC is the bail-out: if nothing ever looks like the
+// charger coming off (a cell fitted with the board already powered, say), the reading wins.
+// ---------------------------------------------------------------------------
+#define GAUGE_STEP_UP_PCT      6   // one interval; a real cell cannot fill that fast
+#define GAUGE_SAG_DOWN_PCT     2   // relaxation when the charger is removed, above ADC noise
+#define GAUGE_CHARGING_MAX_SEC (8 * 3600)
+
+typedef struct {
+    bool    have_baseline;
+    bool    charging;
+    int     published_pct;
+    int     last_raw_pct;
+    int64_t charging_since_us;
+} gauge_state_t;
+
+static gauge_state_t s_gauge;
+
+static int gauge_apply(int raw_pct, int64_t now_us)
+{
+    if (!s_gauge.have_baseline) {
+        s_gauge.have_baseline = true;
+        s_gauge.last_raw_pct  = raw_pct;
+
+        // If this session starts while the charger is already connected, the stored value is
+        // the last number the user actually saw at rest; hold it rather than publishing the
+        // lifted terminal voltage.
+        battery_reading_t stored;
+        if (battery_restore(&stored) && (raw_pct - stored.percent) >= GAUGE_STEP_UP_PCT) {
+            s_gauge.published_pct      = stored.percent;
+            s_gauge.charging           = true;
+            s_gauge.charging_since_us  = now_us;
+            ESP_LOGW(TAG, "booted with a charger on the terminal (%d%% -> %d%%); holding %d%%",
+                     stored.percent, raw_pct, s_gauge.published_pct);
+        } else {
+            s_gauge.published_pct = raw_pct;
+        }
+        return s_gauge.published_pct;
+    }
+
+    const int delta = raw_pct - s_gauge.last_raw_pct;
+
+    if (!s_gauge.charging) {
+        if (delta >= GAUGE_STEP_UP_PCT) {
+            s_gauge.charging          = true;
+            s_gauge.charging_since_us = now_us;
+            ESP_LOGW(TAG, "terminal jumped %d points (a charger); holding %d%% until it is off",
+                     delta, s_gauge.published_pct);
+        } else {
+            s_gauge.published_pct = raw_pct;
+        }
+    } else {
+        const bool sagged =
+            (delta <= -GAUGE_SAG_DOWN_PCT);
+        const bool gave_up =
+            (now_us - s_gauge.charging_since_us) > (int64_t)GAUGE_CHARGING_MAX_SEC * 1000000;
+        if (sagged || gave_up) {
+            if (sagged) {
+                ESP_LOGI(TAG, "charger off: terminal back at rest, publishing %d%%", raw_pct);
+            } else {
+                ESP_LOGW(TAG, "held the charger state for over %d h; publishing %d%%",
+                         GAUGE_CHARGING_MAX_SEC / 3600, raw_pct);
+            }
+            s_gauge.charging      = false;
+            s_gauge.published_pct = raw_pct;
+        }
+        // otherwise: still lifted, keep holding what the user already saw
+    }
+
+    s_gauge.last_raw_pct = raw_pct;
+    return s_gauge.published_pct;
+}
+
 // Tear the ADC down and build it again.
 //
 // battery_init() claims the unit, configures the channel and installs the curve-fitting
@@ -296,7 +389,10 @@ battery_reading_t battery_read()
     out.raw = raw_avg;
     out.pin_mv = pin_mv;
     out.volts = (float)pin_mv / 1000.0f * BAT_DIVIDER;
-    out.percent = battery_percent_from_volts(out.volts);
+    out.raw_percent = battery_percent_from_volts(out.volts);
+
+    // Publish the gauge's answer, not the terminal's: see the note above.
+    out.percent = gauge_apply(out.raw_percent, esp_timer_get_time());
 
     persist_if_changed(out);
     return out;

@@ -448,6 +448,10 @@ extern "C" void app_main(void)
     app_config_init();
     ledger_init();
     battery_init();
+    // What the last session stored, before this one has read anything: the boot paint uses it,
+    // and battery.cpp's gauge uses it to recognise a charger that is already connected - the
+    // terminal is lifted, so this session's first reading arrives high.
+    battery_restore(&s_last_bat);
     // Read the cell once here, before wifi_start(). The ADC is not reliably ours
     // after the radio and power management are up: conversions then come back
     // ESP_ERR_TIMEOUT because the ADC1 lock is held elsewhere, and they keep doing
@@ -458,7 +462,7 @@ extern "C" void app_main(void)
     const battery_reading_t bat_at_boot = battery_read();
     if (bat_at_boot.valid) {
         s_last_bat = bat_at_boot;
-    } else if (battery_restore(&s_last_bat)) {
+    } else if (s_last_bat.valid) {
         ESP_LOGW(TAG, "battery ADC unavailable at boot; showing the last stored %d%% (%.3f V)",
                  s_last_bat.percent, (double)s_last_bat.volts);
     }
@@ -726,7 +730,8 @@ extern "C" void app_main(void)
             }
 #if DEBUG_LOGS
             else {
-                ESP_LOGI(TAG, "battery %.3f V -> %d%%", (double)bat.volts, bat.percent);
+                ESP_LOGI(TAG, "battery %.3f V: terminal %d%%, published %d%%",
+                         (double)bat.volts, bat.raw_percent, bat.percent);
 #if BATTERY_REPORT_RAW
                 // Everything needed to fit the divider ratio and the discharge
                 // curve: what the ADC counted, what the calibration scheme made of
