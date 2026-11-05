@@ -21,6 +21,7 @@ idf_component_register(
         "holidays_net.cpp"
         "clock_time.cpp"
         "usage_ledger.cpp"
+        "ledger_math.cpp"
         "deepseek_api.cpp"
         "wifi_prov.cpp"
         "wifi_portal.cpp"
