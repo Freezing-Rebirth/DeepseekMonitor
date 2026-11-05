@@ -39,6 +39,11 @@ typedef struct {
 void battery_init();
 battery_reading_t battery_read();
 
+// The last reading that succeeded, or an invalid reading if none has. battery_read()
+// updates it, so a caller that only wants to display a number does not have to keep
+// its own copy - and cannot forget to.
+battery_reading_t battery_last();
+
 // How many times the ADC had to be re-created since boot (see the note in battery.cpp).
 // Diagnostic only: it is the one number that says whether the repair after a light sleep
 // worked, on a board whose console is gone exactly when the answer matters.

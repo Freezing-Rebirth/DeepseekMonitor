@@ -22,25 +22,30 @@
 #include <esp_app_desc.h>
 #include <esp_timer.h>
 #include <esp_heap_caps.h>
-#include <esp_wifi.h>
 #include <nvs_flash.h>
 
-#include "board_rlcd.h"
-#include "battery.h"
 #include "app_config.h"
 #include "app_config_store.h"
+#include "balance_monitor.h"
+#include "battery.h"
+#include "board_rlcd.h"
 #include "clock_time.h"
-#include "deepseek_api.h"
-#include "frame_dump.h"
-#include "pricing.h"
 #include "debug_config.h"
+#include "diagnostics.h"
+#include "frame_dump.h"
 #include "holidays.h"
-#include "pricing_selftest.h"
+#include "panel_model.h"
+#include "power.h"
+#include "pricing.h"
+#include "provisioning.h"
 #include "selftest.h"
 #include "ui.h"
 #include "usage_ledger.h"
 #include "wifi_prov.h"
-#include "wifi_portal.h"
+
+#if PRICING_SELFTEST
+#include "pricing_selftest.h"
+#endif
 
 static const char *TAG = "app";
 
@@ -76,138 +81,6 @@ static const char *TAG = "app";
 #define FRAME_DUMP_ENABLED 0
 
 static RlcdPanel s_panel;
-
-// Forward declaration: the provisioning task re-polls once the user has saved
-// credentials, and poll_balance() is defined further down.
-static void poll_balance();
-
-// ---------------------------------------------------------------------------
-// Provisioning
-//
-// The portal runs on its own task so the UI keeps rendering while the user
-// fills in the form. It exits as soon as credentials arrive.
-// ---------------------------------------------------------------------------
-static volatile bool s_portal_active = false;
-
-// When the station first went down with credentials stored. Drives the automatic
-// re-opening of the setup form, so a bad password recovers without a reboot.
-static TickType_t s_offline_since = 0;
-
-// How long to stay offline before offering the setup form again. Long enough that a
-// router reboot or a brief dropout does not raise the access point unnecessarily.
-#define PORTAL_AUTO_OPEN_MS (2 * 60 * 1000)
-
-// Last battery reading that actually succeeded. Kept so a transient ADC failure
-// does not blank the field the panel was already showing.
-static battery_reading_t s_last_bat = {};
-
-static void portal_task(void *arg);
-
-// ---------------------------------------------------------------------------
-// Holiday arrangement refresh.
-//
-// Two requests on different schedules, because they answer different questions:
-//
-//   daily  - the ~200 byte single-day endpoint, for the day actually being
-//            displayed. This is what keeps up with an arrangement that is amended
-//            after it is published, which is the point of checking at all.
-//   monthly - the ~3 KB yearly table, so days the daily check cannot see - the next
-//            switch time can fall on one - are still covered.
-//
-// Both write to NVS and both fall back to the compiled table, so no failure here
-// can change what the panel shows; it only stops the board from learning.
-//
-// Its own task because each request is an HTTPS round trip and the main loop must
-// not block on it. 12 KB of stack for the TLS handshake, same as the balance poll.
-// ---------------------------------------------------------------------------
-static void holiday_task(void *)
-{
-    while (true) {
-        if (wifi_get_status().connected && clock_is_synced()) {
-            struct tm bj;
-            pricing_beijing_tm(clock_now(), &bj);
-            const int year = bj.tm_year + 1900;
-            const int month = bj.tm_mon + 1;
-            const int day = bj.tm_mday;
-
-            if (holidays_today_stale(year, month, day)) {
-                holidays_fetch_today(year, month, day);
-            }
-            // A year the compiled table does not cover has to come from here, so
-            // fetch it even when the monthly interval has not elapsed yet.
-            if (holidays_year_refresh_due() || !holidays_year_supported(year)) {
-                holidays_runtime_fetch_year(year);
-            }
-        }
-        // Woken hourly so a board whose clock only just synced, or whose network was
-        // down, retries promptly rather than waiting a whole day. Both fetches are
-        // gated on their own intervals inside.
-        vTaskDelay(pdMS_TO_TICKS(60 * 60 * 1000));
-    }
-}
-
-// Run the portal to completion and return true when credentials came back.
-// Must be called with s_portal_active already set and no portal task running.
-static bool portal_run(bool wait_forever)
-{
-    wifi_prov_portal_clear_submitted();
-    if (!wifi_prov_portal_start()) {
-        s_portal_active = false;
-        return false;
-    }
-
-    if (wait_forever) {
-        ESP_LOGI(TAG, "portal waiting indefinitely for the setup form");
-        while (!wifi_prov_portal_submitted()) {
-            vTaskDelay(pdMS_TO_TICKS(500));
-        }
-    } else {
-        const TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(5 * 60 * 1000);
-        while (!wifi_prov_portal_submitted() && xTaskGetTickCount() < deadline) {
-            vTaskDelay(pdMS_TO_TICKS(500));
-        }
-    }
-
-    const bool submitted = wifi_prov_portal_submitted();
-    wifi_prov_portal_stop();
-    s_portal_active = false;
-    return submitted;
-}
-
-static void portal_task(void *)
-{
-    // Always wait indefinitely. The form is the only way to fix a bad WiFi
-    // password or a moved router, and a timed window meant that a second attempt
-    // could arrive after the server had already shut down - the page then loaded
-    // into nothing. The portal is cheap to hold open: the station is suspended
-    // while it runs, so it is not fighting the access point.
-    if (!portal_run(true)) {
-        s_portal_active = false;
-        vTaskDelete(nullptr);
-        return;
-    }
-
-    ESP_LOGI(TAG, "credentials received, rejoining network");
-    // The driver is still holding the previous station config; the form wrote to
-    // NVS only. Apply the new one before reconnecting, or this attempt targets the
-    // old network and fails until the next reboot.
-    wifi_apply_stored_credentials();
-    esp_wifi_disconnect();
-    vTaskDelay(pdMS_TO_TICKS(500));
-    esp_wifi_connect();
-    if (wifi_wait_connected(25000)) {
-        ESP_LOGI(TAG, "reconnected");
-        if (clock_sync_sntp(15000)) ESP_LOGI(TAG, "clock synchronised");
-        poll_balance();
-    } else {
-        // Wrong password or unreachable network. The main loop notices that the
-        // station is down and raises the form again, so the user gets another
-        // attempt without touching the board.
-        ESP_LOGW(TAG, "could not join the new network; the setup form will reopen");
-    }
-
-    vTaskDelete(nullptr);
-}
 
 // ---------------------------------------------------------------------------
 // LVGL tick + task
@@ -260,95 +133,6 @@ static void lvgl_task(void *)
 }
 
 // ---------------------------------------------------------------------------
-// Application state
-// ---------------------------------------------------------------------------
-typedef struct {
-    bool   balance_valid;
-    float  balance_cny;
-    bool   ledger_valid;
-    float  daily_burn;
-    float  runway_days;
-} app_state_t;
-
-static app_state_t s_state = {};
-
-static void poll_balance()
-{
-    char key[160];
-    if (!app_config_api_key(key, sizeof(key))) {
-        return;
-    }
-
-    ESP_LOGI(TAG, "querying DeepSeek balance");
-    const ds_balance_t bal = ds_query_balance(key, 15000);
-
-    if (!bal.ok) {
-        ESP_LOGW(TAG, "balance query failed: %s (http %d)", bal.error, bal.http_status);
-        return;
-    }
-
-    s_state.balance_valid = true;
-    s_state.balance_cny = bal.total_balance;
-
-    ESP_LOGI(TAG, "balance %.2f %s (granted %.2f, topped up %.2f, available=%d)",
-             (double)bal.total_balance, bal.currency,
-             (double)bal.granted_balance, (double)bal.topped_up_balance,
-             (int)bal.is_available);
-
-    const time_t now = clock_now();
-    if (clock_is_synced()) {
-        ledger_record(bal.total_balance, (int64_t)now);
-        const ledger_stats_t st = ledger_stats(bal.total_balance, (int64_t)now);
-        s_state.ledger_valid = st.valid;
-        s_state.daily_burn = st.daily_burn_cny;
-        s_state.runway_days = st.runway_days;
-        ESP_LOGI(TAG, "ledger: %d samples over %lld s, burn %.2f/Day, runway %.1f days",
-                 ledger_sample_count(), (long long)ledger_window_sec(),
-                 (double)st.daily_burn_cny, (double)st.runway_days);
-    }
-}
-
-static void build_ui_model(ui_model_t *m)
-{
-    memset(m, 0, sizeof(*m));
-
-    m->clock_valid = clock_is_synced();
-    m->now = clock_now();
-
-    m->balance_valid = s_state.balance_valid;
-    m->balance_cny = s_state.balance_cny;
-
-    m->ledger_valid = s_state.ledger_valid;
-    m->daily_burn_cny = s_state.daily_burn;
-    m->runway_days = s_state.runway_days;
-
-    m->model = APP_DEFAULT_MODEL;
-    m->tier = APP_DEFAULT_TIER;
-
-    // The charge the device last knew. Set here rather than by the caller so the
-    // paint at boot has it too: that paint happens before the main loop's first
-    // repaint, and it used to leave these three at the memset above, which is why
-    // the panel read "BAT:--" until the first three-minute refresh.
-    m->battery_valid   = s_last_bat.valid;
-    m->battery_percent = s_last_bat.percent;
-    m->battery_state   = s_last_bat.state;
-
-#if DEMO_DATA
-    // Fixed sample data. The token line is derived from the balance and the peak
-    // cache-hit rate, so 148.52 CNY at 0.12 CNY per 1M tokens reads as 1.24B.
-    m->clock_valid = true;
-    m->now = 1779156000;            // 2026-05-19 10:00 Beijing (Tue), PEAK window
-    m->battery_valid = true;
-    m->battery_percent = 94;
-    m->balance_valid = true;
-    m->balance_cny = 148.52f;
-    m->ledger_valid = true;
-    m->daily_burn_cny = 3.86f;
-    m->runway_days = 38.0f;
-#endif
-}
-
-// ---------------------------------------------------------------------------
 extern "C" void app_main(void)
 {
     // The single line this firmware prints at boot, and the reason it is WARN rather
@@ -359,43 +143,8 @@ extern "C" void app_main(void)
     const esp_app_desc_t *desc = esp_app_get_description();
     ESP_LOGW(TAG, "DeepSeek Monitor %s (built %s %s)", desc->version, desc->date, desc->time);
 
-    // ---- power management ----
-    //
-    // CONFIG_PM_DFS_INIT_AUTO alone only installs dynamic frequency scaling: the
-    // startup code calls esp_pm_configure() with the two frequencies and leaves
-    // light_sleep_enable at false (esp_pm/pm_impl.c, esp_pm_impl_init). Automatic
-    // light sleep has to be asked for, and without this call the system stops at the
-    // DFS floor and never enters a low-power state at all - CONFIG_PM_ENABLE and
-    // CONFIG_FREERTOS_USE_TICKLESS_IDLE are necessary but not sufficient.
-    //
-    // The ceiling is the configured CPU frequency (80 MHz); the floor is the XTAL,
-    // 40 MHz, and that is what the CPU idles at. With WiFi modem sleep already on,
-    // light sleep is what the system falls into between DTIM beacons.
-    //
-    // Light sleep is held off while a USB host is attached, and on this chip that is
-    // not a nicety: the ESP32-S3's USB-Serial/JTAG peripheral cannot work during
-    // light sleep or after waking from it. Measured here: with the lock absent, the
-    // console port stops opening the moment this call takes effect, and the board has
-    // to be put into download mode by hand before it can be flashed again. The lock
-    // comes from CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION in sdkconfig.defaults. On battery
-    // no host is present, so it is not taken and light sleep runs.
-    //
-    // A failure is logged rather than fatal: DFS still stands, and a reboot loop on a
-    // device with no console attached is worse than losing the feature quietly.
-    {
-        const esp_pm_config_t pm = {
-            .max_freq_mhz = CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ,
-            .min_freq_mhz = esp_clk_xtal_freq() / 1000000,
-            .light_sleep_enable = true,
-        };
-        const esp_err_t pm_err = esp_pm_configure(&pm);
-        if (pm_err != ESP_OK) {
-            ESP_LOGE(TAG, "power management config failed: %s", esp_err_to_name(pm_err));
-        } else {
-            ESP_LOGI(TAG, "power management: %d..%d MHz, automatic light sleep on",
-                     (int)pm.max_freq_mhz, (int)pm.min_freq_mhz);
-        }
-    }
+    // ---- power ----
+    power_configure();
 
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -425,23 +174,25 @@ extern "C" void app_main(void)
     app_config_init();
     ledger_init();
     battery_init();
-    // What the last session stored, before this one has read anything: the boot paint uses it,
-    // and battery.cpp's gauge uses it to recognise a charger that is already connected - the
-    // terminal is lifted, so this session's first reading arrives high.
-    battery_restore(&s_last_bat);
-    // Read the cell once here, before wifi_start(). The ADC is not reliably ours
-    // after the radio and power management are up: conversions then come back
-    // ESP_ERR_TIMEOUT because the ADC1 lock is held elsewhere, and they keep doing
-    // so for the rest of the session - measured on this board, every repaint from
-    // five seconds onwards. This early read is what fills the cache the panel then
-    // repaints from; if even it fails, fall back to the value the last session
-    // stored, so the panel shows a charge rather than "BAT:--". See battery.cpp.
-    const battery_reading_t bat_at_boot = battery_read();
-    if (bat_at_boot.valid) {
-        s_last_bat = bat_at_boot;
-    } else if (s_last_bat.valid) {
+    // What the last session stored, before this one has read anything: the boot paint
+    // uses it, and battery.cpp's gauge uses it to recognise a charger that is already
+    // connected - the terminal is lifted, so this session's first reading arrives high.
+    battery_reading_t stored = {};
+    if (!battery_restore(&stored)) {
+        stored = {};
+    }
+
+    // Read the cell once here, before wifi_start(). The ADC is not reliably ours after
+    // the radio and power management are up: conversions then come back
+    // ESP_ERR_TIMEOUT because the ADC1 lock is held elsewhere, and they keep doing so
+    // for the rest of the session - measured on this board, every repaint from five
+    // seconds onwards. This early read is what fills the cache the panel then repaints
+    // from; if even it fails, the stored value above keeps a number on the panel. See
+    // battery.cpp.
+    const battery_reading_t at_boot = battery_read();
+    if (!at_boot.valid && stored.valid) {
         ESP_LOGW(TAG, "battery ADC unavailable at boot; showing the last stored %d%% (%.3f V)",
-                 s_last_bat.percent, (double)s_last_bat.volts);
+                 stored.percent, (double)stored.volts);
     }
     // Load any previously fetched holiday arrangement before the first tariff
     // classification, so a reboot keeps using last month's data rather than falling
@@ -456,25 +207,9 @@ extern "C" void app_main(void)
     wifi_start();
     bool online = wifi_wait_connected(20000);
 
-    // No stored network, or the stored one did not answer: raise the portal so
-    // the user can enter WiFi and the API key from a phone.
-    // 12 KB of stack because this task goes on to call poll_balance(), and the TLS
-    // handshake plus certificate-bundle parse does not fit in 6 KB - at 6 KB it
-    // tripped the FreeRTOS stack-overflow hook and rebooted the board in a loop.
-    if (!online && !appcfg_has_wifi()) {
-        ESP_LOGI(TAG, "no stored network; starting provisioning portal");
-        s_portal_active = true;
-        xTaskCreatePinnedToCore(portal_task, "portal", 12288, nullptr, 3, nullptr, 0);
-    } else if (!online) {
-        // Has credentials that will not connect: a wrong password, a moved router,
-        // or a network that is simply down. Either way the user cannot fix it from
-        // the panel, and the only recovery used to be a BOOT long press they would
-        // have to know about. Raise the form immediately, in the background, so the
-        // UI still comes up and the user can retry as often as they like.
-        ESP_LOGW(TAG, "stored network did not connect; opening the setup portal");
-        s_portal_active = true;
-        xTaskCreatePinnedToCore(portal_task, "portal", 12288, nullptr, 3, nullptr, 0);
-    }
+    // Raise the setup form if there is no stored network, or if the stored one did not
+    // answer. Called here rather than from the loop so it is up before the first paint.
+    provisioning_after_wifi(online);
 
     if (online) {
         ESP_LOGI(TAG, "WiFi connected");
@@ -486,13 +221,13 @@ extern "C" void app_main(void)
     }
 
     if (online && clock_is_synced()) {
-        poll_balance();
+        balance_poll();
     }
 
-    // Keep the holiday arrangement current without a reflash. Started whenever the
-    // link is up; the task itself decides whether a refresh is due.
+    // Keep the holiday arrangement current without a reflash. The task itself decides
+    // whether a refresh is due.
     if (online) {
-        xTaskCreatePinnedToCore(holiday_task, "holidays", 12288, nullptr, 2, nullptr, 0);
+        holidays_start_refresh_task();
     }
 
     // ---- UI ----
@@ -506,7 +241,7 @@ extern "C" void app_main(void)
     lvgl_lock();
     ui_init(s_panel.display());
     ui_model_t model;
-    build_ui_model(&model);
+    panel_model_build(&model);
     ui_update(&model);
     lvgl_unlock();
 
@@ -547,98 +282,15 @@ extern "C" void app_main(void)
             }
         }
 
-        // Auto-recover an unreachable network.
-        //
-        // If the board cannot reach the stored network there is nothing the user can
-        // do from the panel, so the setup form is raised on its own. Without this,
-        // a wrong WiFi password looks exactly like dead hardware: the board
-        // associates, fails the handshake, retries forever, and never offers a way
-        // in. The delay keeps a brief blip - a router reboot, say - from raising the
-        // access point when the link is about to come back by itself.
-        if (!s_portal_active && appcfg_has_wifi() &&
-            !wifi_get_status().connected) {
-            if (s_offline_since == 0) {
-                s_offline_since = xTaskGetTickCount();
-            } else if ((xTaskGetTickCount() - s_offline_since) >=
-                       pdMS_TO_TICKS(PORTAL_AUTO_OPEN_MS)) {
-                ESP_LOGW(TAG, "offline for %u s with stored credentials; "
-                              "opening the setup portal",
-                         (unsigned)(PORTAL_AUTO_OPEN_MS / 1000));
-                s_portal_active = true;
-                xTaskCreatePinnedToCore(portal_task, "portal", 12288, nullptr, 3,
-                                        nullptr, 0);
-                s_offline_since = 0;
-            }
-        } else if (wifi_get_status().connected) {
-            s_offline_since = 0;
-        }
+        // Setup-portal policy: reopen the form after a sustained dropout, and on a BOOT
+        // long press.
+        provisioning_tick();
 
-        // Heartbeat: with DEBUG_LOGS on this proves the LVGL task and the main loop
-        // are both alive and shows the countdowns; otherwise it only advances the
-        // timer.
+        // Heartbeat: proves both tasks alive and reports the CPU duty cycle. Its body
+        // is compiled out unless DEBUG_LOGS is on.
         if ((xTaskGetTickCount() - last_hb) >= pdMS_TO_TICKS(30000)) {
             last_hb = xTaskGetTickCount();
-#if DEBUG_LOGS
-            const wifi_status_t w = wifi_get_status();
-            // The countdowns are logged with the heartbeat so the refresh schedule can
-            // be watched directly instead of inferred from the panel. A deadline
-            // already passed wraps to a huge TickType_t, so each is clamped rather
-            // than reported as ~4.29e6 seconds.
-            const TickType_t now_ticks = xTaskGetTickCount();
-            const TickType_t ui_left  = pdMS_TO_TICKS(APP_UI_REFRESH_MS) -
-                                        (now_ticks - last_ui);
-            const TickType_t api_left = pdMS_TO_TICKS(APP_BALANCE_POLL_MS) -
-                                        (now_ticks - last_api);
-            const uint32_t to_api = (uint32_t)((api_left > pdMS_TO_TICKS(APP_BALANCE_POLL_MS))
-                                                   ? 0 : api_left / pdMS_TO_TICKS(1000));
-            const uint32_t to_ui  = (uint32_t)((ui_left > pdMS_TO_TICKS(APP_UI_REFRESH_MS))
-                                                   ? 0 : ui_left / pdMS_TO_TICKS(1000));
-            // How much of the wall time the CPU actually ran, rather than inferring it.
-            //
-            // xTaskGetTickCount() is supplied by the sleep timer, which the power
-            // management layer keeps in step with real time across light sleep.
-            // esp_timer_get_time() is the hardware timer, which stops while the CPU is
-            // asleep. The ratio of the two advances over the same interval is therefore
-            // the duty cycle: 100% means the CPU never slept.
-            //
-            // The CPU cycle counter would measure this directly, but it is 32 bits, so at
-            // 80 MHz it wraps every 54 seconds - less than the heartbeat interval - which
-            // is how the first attempt at this reported nonsense.
-            const int64_t us = esp_timer_get_time();
-            static TickType_t last_hb_ticks = 0;
-            static int64_t    last_hb_us    = 0;
-            uint32_t duty = 0;
-            bool duty_known = false;
-            if (last_hb_ticks != 0) {
-                const int64_t wall_us = (int64_t)(now_ticks - last_hb_ticks) *
-                                        (1000000LL / configTICK_RATE_HZ);
-                int64_t hw_us = us - last_hb_us;
-                // Clamp instead of discarding. The two clocks round against each other, so a
-                // fully awake interval can overshoot by a tick or two; the old code dropped
-                // those samples, which is the same branch as a sleeping chip, and reported
-                // awake=0% for three heartbeats in a row with light sleep switched off.
-                if (wall_us > 0) {
-                    if (hw_us < 0) hw_us = 0;
-                    if (hw_us > wall_us) hw_us = wall_us;
-                    duty = (uint32_t)(hw_us * 100 / wall_us);
-                    duty_known = true;
-                }
-            }
-            last_hb_ticks = now_ticks;
-            last_hb_us = us;
-
-            // The first heartbeat has no baseline to compare against, so it says so rather
-            // than reporting a duty cycle of zero.
-            char duty_str[8];
-            if (duty_known) snprintf(duty_str, sizeof(duty_str), "%u%%", (unsigned)duty);
-            else            snprintf(duty_str, sizeof(duty_str), "--");
-
-            ESP_LOGI(TAG, "alive: wifi=%d ip=%s rssi=%d cpu=%uMHz awake=%s psram=%u | next api in %us, ui in %us",
-                     (int)w.connected, w.ip, (int)w.rssi,
-                     (unsigned)(esp_clk_cpu_freq() / 1000000), duty_str,
-                     (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
-                     (unsigned)to_api, (unsigned)to_ui);
-#endif
+            diagnostics_heartbeat(last_ui, last_api);
         }
 
         price_state_t now_state = last_price_state;
@@ -649,15 +301,6 @@ extern "C" void app_main(void)
         const bool state_changed = (now_state != last_price_state);
         const bool ui_due = (xTaskGetTickCount() - last_ui) >= pdMS_TO_TICKS(APP_UI_REFRESH_MS);
         const bool api_due = (xTaskGetTickCount() - last_api) >= pdMS_TO_TICKS(APP_BALANCE_POLL_MS);
-
-        // Hold BOOT for ~3 s at any time to re-enter provisioning.
-        if (!s_portal_active && boot_button_long_pressed()) {
-            ESP_LOGI(TAG, "BOOT long press: starting provisioning portal");
-            s_portal_active = true;
-            // Null argument: bounded wait, so a stray press cannot pin AP mode on.
-            // Same 12 KB as the first-boot portal, which also ends in poll_balance().
-            xTaskCreatePinnedToCore(portal_task, "portal", 12288, nullptr, 3, nullptr, 0);
-        }
 
         // Boot repair: a few seconds in, re-send the panel init once (see RlcdPanel::Repair).
         // An ST7305 that came up dark never accepts a frame and nothing else in the application
@@ -670,7 +313,7 @@ extern "C" void app_main(void)
                 s_panel.Repair();
                 lvgl_unlock();
                 ui_model_t m;
-                build_ui_model(&m);
+                panel_model_build(&m);
                 lvgl_lock();
                 ui_update(&m);
                 lvgl_unlock();
@@ -687,7 +330,7 @@ extern "C" void app_main(void)
 #endif
             if (wifi_get_status().connected) {
                 if (!clock_is_synced()) clock_sync_sntp(10000);
-                poll_balance();
+                balance_poll();
             }
         }
 
@@ -695,17 +338,12 @@ extern "C" void app_main(void)
             last_ui = xTaskGetTickCount();
             last_price_state = now_state;
 
-            // Battery: read here, but only publish a reading that succeeded. A
-            // failed ADC read used to overwrite the field with valid=false, which
-            // made the panel drop to "BAT:--" even though it had shown a number a
-            // second earlier. Keep the last good value instead.
+            // battery_read() keeps its last successful reading, so a failed conversion
+            // no longer blanks a number the panel was already showing.
             const battery_reading_t bat = battery_read();
-            if (bat.valid) {
-                s_last_bat = bat;
-            }
 
             ui_model_t m;
-            build_ui_model(&m);
+            panel_model_build(&m);
             lvgl_lock();
             ui_update(&m);
             lvgl_unlock();

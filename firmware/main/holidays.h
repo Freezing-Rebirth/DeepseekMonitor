@@ -82,7 +82,11 @@ bool holidays_runtime_fetch_year(int year);
 bool holidays_year_refresh_due();
 void holidays_mark_year_refreshed();
 
-// Days currently held in the runtime year table, for logging.
+// Start the background task that keeps today's arrangement and the yearly table
+// current. One HTTPS round trip per fetch, on its own task so the main loop does not
+// block; it decides for itself whether a refresh is due. Started whenever the link is
+// up - a failure only stops the board from learning, never what the panel shows.
+void holidays_start_refresh_task();
 
 // Make the next daily check ignore the caches. For bringing the feature up and for
 // support: a cached verdict covers a whole day, so a fix is otherwise unobservable

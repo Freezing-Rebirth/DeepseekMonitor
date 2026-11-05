@@ -37,6 +37,10 @@ static bool                      s_ready = false;
 // five keys every three minutes, whose flash budget is worked out in
 // usage_ledger.cpp and comes to centuries.
 // ---------------------------------------------------------------------------
+// The last reading that succeeded. Updated by battery_read(), so a caller that wants to
+// display a number does not keep its own copy - it used to, and it went stale.
+static battery_reading_t s_last = {};
+
 static const char *BAT_NVS_NS  = "dsbat";
 static const char *KEY_PERCENT = "pct";
 static const char *KEY_MV      = "mv";     // cell millivolts, divider undone
@@ -351,6 +355,11 @@ static void reinit()
     battery_init();
 }
 
+battery_reading_t battery_last()
+{
+    return s_last;
+}
+
 battery_reading_t battery_read()
 {
     battery_reading_t out = {};
@@ -439,5 +448,6 @@ battery_reading_t battery_read()
     out.state   = s_gauge.state;
 
     persist_if_changed(out);
+    s_last = out;
     return out;
 }

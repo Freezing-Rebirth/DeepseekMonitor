@@ -1,6 +1,11 @@
 idf_component_register(
     SRCS
         "main.cpp"
+        "power.cpp"
+        "balance_monitor.cpp"
+        "panel_model.cpp"
+        "provisioning.cpp"
+        "diagnostics.cpp"
         "board_rlcd.cpp"
         "selftest.cpp"
         "pricing_selftest.cpp"

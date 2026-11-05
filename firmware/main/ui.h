@@ -36,6 +36,7 @@
 typedef struct {
     bool   clock_valid;      // SNTP has produced a real date
     time_t now;              // UTC
+    char   wifi_text[8];     // precomputed "OK" / "TR" / "ER" / "--"
 
     bool   battery_valid;
     int    battery_percent;

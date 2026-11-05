@@ -1,4 +1,7 @@
 #include "holidays.h"
+#include "clock_time.h"
+#include "pricing.h"
+#include "wifi_prov.h"
 #include "app_config.h"
 
 #include <string.h>
@@ -728,4 +731,52 @@ bool holidays_runtime_fetch_year(int year)
     ESP_LOGW(TAG, "no source returned the %d arrangement; the compiled table stands",
              year);
     return false;
+}
+
+// ---------------------------------------------------------------------------
+// Background refresh
+//
+// Two requests on different schedules, because they answer different questions:
+//
+//   daily   - the ~200 byte single-day endpoint, for the day actually being
+//             displayed. This is what keeps up with an arrangement that is amended
+//             after it is published, which is the point of checking at all.
+//   monthly - the ~3 KB yearly table, so days the daily check cannot see - the next
+//             switch time can fall on one - are still covered.
+//
+// Both write to NVS and both fall back to the compiled table, so no failure here can
+// change what the panel shows; it only stops the board from learning.
+//
+// Its own task because each request is an HTTPS round trip and the main loop must not
+// block on it. 12 KB of stack for the TLS handshake, same as the balance poll.
+// ---------------------------------------------------------------------------
+static void refresh_task(void *)
+{
+    while (true) {
+        if (wifi_get_status().connected && clock_is_synced()) {
+            struct tm bj;
+            pricing_beijing_tm(clock_now(), &bj);
+            const int year = bj.tm_year + 1900;
+            const int month = bj.tm_mon + 1;
+            const int day = bj.tm_mday;
+
+            if (holidays_today_stale(year, month, day)) {
+                holidays_fetch_today(year, month, day);
+            }
+            // A year the compiled table does not cover has to come from here, so fetch
+            // it even when the monthly interval has not elapsed yet.
+            if (holidays_year_refresh_due() || !holidays_year_supported(year)) {
+                holidays_runtime_fetch_year(year);
+            }
+        }
+        // Woken hourly so a board whose clock only just synced, or whose network was
+        // down, retries promptly rather than waiting a whole day. Both fetches are
+        // gated on their own intervals inside.
+        vTaskDelay(pdMS_TO_TICKS(60 * 60 * 1000));
+    }
+}
+
+void holidays_start_refresh_task()
+{
+    xTaskCreatePinnedToCore(refresh_task, "holidays", 12288, nullptr, 2, nullptr, 0);
 }
