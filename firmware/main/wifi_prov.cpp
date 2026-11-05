@@ -41,7 +41,7 @@ static volatile bool s_nvs_ready = false;
 #define WIFI_ERR_HOLD_MS 4000
 static volatile TickType_t s_err_at = 0;
 
-wifi_link_t wifi_get_link()
+static wifi_link_t wifi_get_link()
 {
     // No credentials means no attempt, whatever the driver is doing.
     if (!appcfg_has_wifi()) {

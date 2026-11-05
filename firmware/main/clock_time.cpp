@@ -54,12 +54,3 @@ time_t clock_now()
     time(&now);
     return now;
 }
-
-void clock_format_hhmm_cst(char *out, size_t out_len)
-{
-    const time_t now = clock_now();
-    struct tm bj = {};
-    const time_t bj_secs = now + 8 * 3600;
-    gmtime_r(&bj_secs, &bj);
-    snprintf(out, out_len, "%02d:%02d CST", bj.tm_hour, bj.tm_min);
-}

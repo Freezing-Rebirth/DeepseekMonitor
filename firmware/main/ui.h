@@ -31,21 +31,18 @@
 #define UI_BALANCE_Y  26
 #define UI_PRICE_Y    150
 
-// Everything the panel needs for one repaint.
+// Everything the panel needs for one repaint. A field lives here only if ui_update()
+// reads it; anything the panel does not draw does not belong in the model.
 typedef struct {
     bool   clock_valid;      // SNTP has produced a real date
     time_t now;              // UTC
 
-    bool   wifi_connected;
-    int8_t wifi_rssi;
     bool   battery_valid;
-    float  battery_volts;
     int    battery_percent;
     battery_state_t battery_state;
 
     bool   balance_valid;
     float  balance_cny;
-    char   balance_currency[8];
 
     bool   ledger_valid;
     float  daily_burn_cny;
@@ -53,9 +50,6 @@ typedef struct {
 
     price_model_t model;
     price_tier_t  tier;
-
-    bool   api_ok;           // last API poll succeeded
-    char   status_text[48];  // short diagnostic line
 } ui_model_t;
 
 // Build every LVGL object once. The panel driver and LVGL must already be up.
@@ -65,9 +59,4 @@ void ui_init(lv_display_t *disp);
 // classification, so the peak/off-peak inversion happens here.
 void ui_update(const ui_model_t *model);
 
-// Force a repaint.
-void ui_invalidate();
 
-// Advance the bottom-left activity indicator. The indicator is the one element
-// that is not part of the design; it shows that data is still being refreshed.
-void ui_set_heartbeat(bool alive);

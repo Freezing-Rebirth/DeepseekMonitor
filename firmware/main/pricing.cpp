@@ -92,31 +92,6 @@ const char *pricing_state_name(price_state_t st)
     return (st == PRICE_PEAK) ? "PEAK" : "OFF-PEAK";
 }
 
-int pricing_current_window_text(time_t utc, char *out, size_t out_len)
-{
-    struct tm bj;
-    pricing_beijing_tm(utc, &bj);
-    const int year  = bj.tm_year + 1900;
-    const int month = bj.tm_mon + 1;
-    const int day   = bj.tm_mday;
-
-    const char *text;
-    if (pricing_is_holiday(year, month, day)) {
-        text = "HOLIDAY";
-    } else if ((bj.tm_wday == 0 || bj.tm_wday == 6) &&
-               !pricing_is_makeup_workday(year, month, day)) {
-        text = "WEEKEND";
-    } else {
-        const int m = bj.tm_hour * 60 + bj.tm_min;
-        if (m >= 9 * 60 && m < 12 * 60)       text = "09:00-12:00";
-        else if (m >= 14 * 60 && m < 18 * 60) text = "14:00-18:00";
-        else                                  text = "OFF-PEAK";
-    }
-
-    const int n = snprintf(out, out_len, "%s", text);
-    return (n < 0) ? 0 : n;
-}
-
 // Advance one minute and ask again, up to a full week.
 //
 // The window has to be a week, not a day. From Saturday morning until the next

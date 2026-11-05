@@ -13,12 +13,12 @@
 // Sizes were chosen with _research/solve_sizes.py: for each string it picks the
 // largest face that still fits the width the design renders that string at.
 //
-//   dsb_8    status telemetry, runway, basis and burn lines
-//   dsb_9    brand, funds caption
-//   dsb_10   token equivalent and yen sign
-//   dsb_11   NEXT line
-//   dsb_20   balance figures
-//   dsb_36   PEAK / TROUGH
+// The shipped faces, as wired in ui_fonts.cpp:
+//   dsr_12   small    status telemetry / captions
+//   dsr_14   body     brand, basis and burn lines, token equivalent
+//   dsr_18   next     NEXT line
+//   dsr_32   balance  balance figures
+//   dsr_44   state    PEAK / TROUGH
 //
 // Every face also carries the yen sign, "almost equal to", the black square and
 // the right-pointing triangle, which Silkscreen itself lacks.
@@ -43,18 +43,16 @@ extern const lv_font_t dsy_18;
 extern const lv_font_t dsy_32;
 extern const lv_font_t dsy_44;
 
-// LVGL's built-in data font, used only by the raw bring-up self test.
-extern const lv_font_t lv_font_montserrat_14;
 
 // Runtime copies of the text faces with their symbol fallback attached.
 // LVGL's own font structs are const, so the chain needs its own copies.
 struct dsb_fonts {
-    const lv_font_t *body;     // dsb_9  -> dsy_9
-    const lv_font_t *small;    // dsb_8  -> dsy_8
-    const lv_font_t *token;    // dsb_10 -> dsy_10
-    const lv_font_t *balance;  // dsb_20 -> dsy_20
-    const lv_font_t *state;    // dsb_36 -> dsy_36
-    const lv_font_t *next;     // dsb_11 -> dsy_11
+    const lv_font_t *body;     // dsr_14 -> dsy_14
+    const lv_font_t *small;    // dsr_12 -> dsy_12
+    const lv_font_t *token;    // dsr_14 -> dsy_14
+    const lv_font_t *balance;  // dsr_32 -> dsy_32
+    const lv_font_t *state;    // dsr_44 -> dsy_44
+    const lv_font_t *next;     // dsr_18 -> dsy_18
 };
 
 // Attach the fallbacks. Call once before ui_init().

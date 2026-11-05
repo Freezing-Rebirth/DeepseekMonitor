@@ -50,7 +50,6 @@ bool wifi_apply_stored_credentials();
 wifi_status_t wifi_get_status();
 
 // Current link state, for the status bar.
-wifi_link_t wifi_get_link();
 
 // Two-character label for the status bar: "--" with no credentials stored, then
 // "TR", "OK" or "ER".

@@ -235,17 +235,7 @@ static void fmt_tokens(double tokens, char *out, size_t n)
     else                    snprintf(out, n, "%.0f", tokens);
 }
 
-void ui_invalidate()
-{
-    if (g.scr) lv_obj_invalidate(g.scr);
-}
 
-void ui_set_heartbeat(bool alive)
-{
-    // The new design has no activity indicator; the parameter is kept so main.cpp
-    // does not need changing, and the mark simply stays hidden.
-    (void)alive;
-}
 
 void ui_update(const ui_model_t *m)
 {

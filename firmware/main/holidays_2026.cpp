@@ -44,7 +44,7 @@ const holiday_date_t kMakeupWorkdays2026[] = {
 const int kMakeupWorkdays2026Count =
     sizeof(kMakeupWorkdays2026) / sizeof(kMakeupWorkdays2026[0]);
 
-// The lookup functions live in holidays_runtime.cpp: they consult the runtime table
+// The lookup functions live in holidays_net.cpp: they consult the runtime table
 // first and fall back to the arrays above, so there is one place that decides which
 // source answers for a given day.
 

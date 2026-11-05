@@ -34,7 +34,7 @@ static bool                      s_ready = false;
 //
 // Two entries in their own namespace. The write happens only when the percentage
 // steps, so the traffic is a few writes a day - the same order as the ledger's
-// five keys every five minutes, whose flash budget is worked out in
+// five keys every three minutes, whose flash budget is worked out in
 // usage_ledger.cpp and comes to centuries.
 // ---------------------------------------------------------------------------
 static const char *BAT_NVS_NS  = "dsbat";

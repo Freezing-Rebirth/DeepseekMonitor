@@ -49,4 +49,7 @@ idf_component_register(
         mbedtls
         espressif__cjson
         lvgl
+    # Private: main.cpp uses esp_app_get_description() for the boot banner.
+    PRIV_REQUIRES
+        esp_app_format
 )

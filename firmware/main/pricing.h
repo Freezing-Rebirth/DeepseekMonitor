@@ -46,7 +46,7 @@ price_pair_t pricing_lookup(price_model_t model, price_tier_t tier);
 // Classify an instant. `utc` is evaluated as Beijing time internally.
 price_state_t pricing_classify(time_t utc);
 
-// Human-readable state name ("PEAK" / "OFFPEAK").
+// Human-readable state name ("PEAK" / "OFF-PEAK").
 const char *pricing_state_name(price_state_t st);
 
 // True when the given Beijing calendar date is a statutory holiday.
@@ -58,7 +58,6 @@ bool pricing_is_makeup_workday(int year, int month, int day);
 
 // Format the window currently in force, e.g. "09:00-12:00" or "OFF-PEAK".
 // Returns the number of characters written (excluding the terminator).
-int pricing_current_window_text(time_t utc, char *out, size_t out_len);
 
 // Seconds until the next peak/off-peak boundary. Never returns a negative
 // value; returns 0 only if the whole calendar is exhausted (impossible).

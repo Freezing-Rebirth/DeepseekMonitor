@@ -204,12 +204,6 @@ void holidays_runtime_init()
     }
 }
 
-int holidays_runtime_year(int slot)
-{
-    blob_load();
-    if (slot < 0 || slot >= HOL_SLOTS) return 0;
-    return s_blob.years[slot].year;
-}
 
 // ---------------------------------------------------------------------------
 // Lookup

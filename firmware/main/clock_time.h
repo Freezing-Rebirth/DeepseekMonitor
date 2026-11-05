@@ -19,7 +19,6 @@ bool clock_sync_sntp(int timeout_ms);
 bool clock_is_synced();
 
 // Format the current Beijing time as "HH:MM CST".
-void clock_format_hhmm_cst(char *out, size_t out_len);
 
 // Current UTC time.
 time_t clock_now();

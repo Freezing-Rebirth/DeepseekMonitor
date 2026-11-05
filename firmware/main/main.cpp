@@ -7,7 +7,7 @@
 //   SNTP ---------> civil clock (Beijing time)
 //   WiFi ---------> link status + RSSI
 //   ADC GPIO4 ----> 18650 cell voltage
-//   /user/balance -> account balance (polled every 10 minutes)
+//   /user/balance -> account balance (polled every three minutes)
 //   usage ledger -> burn rate + runway (derived on device; DeepSeek has no
 //                   spending-history endpoint)
 //   pricing.cpp --> peak / off-peak classification, which inverts the screen
@@ -19,7 +19,7 @@
 #include <esp_log.h>
 #include <esp_pm.h>
 #include <esp_private/esp_clk.h>
-#include <esp_cpu.h>
+#include <esp_app_desc.h>
 #include <esp_timer.h>
 #include <esp_heap_caps.h>
 #include <esp_wifi.h>
@@ -265,12 +265,9 @@ static void lvgl_task(void *)
 typedef struct {
     bool   balance_valid;
     float  balance_cny;
-    char   balance_currency[8];
     bool   ledger_valid;
     float  daily_burn;
     float  runway_days;
-    bool   api_ok;
-    char   status[48];
 } app_state_t;
 
 static app_state_t s_state = {};
@@ -279,8 +276,6 @@ static void poll_balance()
 {
     char key[160];
     if (!app_config_api_key(key, sizeof(key))) {
-        snprintf(s_state.status, sizeof(s_state.status), "NO API KEY");
-        s_state.api_ok = false;
         return;
     }
 
@@ -288,21 +283,15 @@ static void poll_balance()
     const ds_balance_t bal = ds_query_balance(key, 15000);
 
     if (!bal.ok) {
-        snprintf(s_state.status, sizeof(s_state.status), "API: %.32s", bal.error);
-        s_state.api_ok = false;
         ESP_LOGW(TAG, "balance query failed: %s (http %d)", bal.error, bal.http_status);
         return;
     }
 
-    s_state.api_ok = true;
     s_state.balance_valid = true;
     s_state.balance_cny = bal.total_balance;
-    snprintf(s_state.balance_currency, sizeof(s_state.balance_currency), "%s",
-             bal.currency[0] ? bal.currency : "CNY");
-    s_state.status[0] = '\0';
 
     ESP_LOGI(TAG, "balance %.2f %s (granted %.2f, topped up %.2f, available=%d)",
-             (double)bal.total_balance, s_state.balance_currency,
+             (double)bal.total_balance, bal.currency,
              (double)bal.granted_balance, (double)bal.topped_up_balance,
              (int)bal.is_available);
 
@@ -326,14 +315,8 @@ static void build_ui_model(ui_model_t *m)
     m->clock_valid = clock_is_synced();
     m->now = clock_now();
 
-    const wifi_status_t w = wifi_get_status();
-    m->wifi_connected = w.connected;
-    m->wifi_rssi = w.rssi;
-
     m->balance_valid = s_state.balance_valid;
     m->balance_cny = s_state.balance_cny;
-    snprintf(m->balance_currency, sizeof(m->balance_currency), "%s",
-             s_state.balance_currency[0] ? s_state.balance_currency : "CNY");
 
     m->ledger_valid = s_state.ledger_valid;
     m->daily_burn_cny = s_state.daily_burn;
@@ -341,16 +324,12 @@ static void build_ui_model(ui_model_t *m)
 
     m->model = APP_DEFAULT_MODEL;
     m->tier = APP_DEFAULT_TIER;
-    m->api_ok = s_state.api_ok;
-    snprintf(m->status_text, sizeof(m->status_text), "%s",
-             s_state.status[0] ? s_state.status : "WAITING FOR DATA");
 
     // The charge the device last knew. Set here rather than by the caller so the
     // paint at boot has it too: that paint happens before the main loop's first
     // repaint, and it used to leave these three at the memset above, which is why
     // the panel read "BAT:--" until the first three-minute refresh.
     m->battery_valid   = s_last_bat.valid;
-    m->battery_volts   = s_last_bat.volts;
     m->battery_percent = s_last_bat.percent;
     m->battery_state   = s_last_bat.state;
 
@@ -359,7 +338,6 @@ static void build_ui_model(ui_model_t *m)
     // cache-hit rate, so 148.52 CNY at 0.12 CNY per 1M tokens reads as 1.24B.
     m->clock_valid = true;
     m->now = 1779156000;            // 2026-05-19 10:00 Beijing (Tue), PEAK window
-    m->wifi_connected = true;
     m->battery_valid = true;
     m->battery_percent = 94;
     m->balance_valid = true;
@@ -373,15 +351,13 @@ static void build_ui_model(ui_model_t *m)
 // ---------------------------------------------------------------------------
 extern "C" void app_main(void)
 {
-    // Everything else drops to WARN via CONFIG_LOG_DEFAULT_LEVEL (the release config).
-    // These two lines are the exception: without them a board cannot be told apart from
-    // one carrying an older image of the same commit, which is the most useful thing the
-    // console ever printed.
-    esp_log_level_set("app_init", ESP_LOG_INFO);
-
-    ESP_LOGI(TAG, "DeepSeek Monitor starting");
-    ESP_LOGI(TAG, "PSRAM free at boot: %u bytes",
-             (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+    // The single line this firmware prints at boot, and the reason it is WARN rather
+    // than INFO: CONFIG_LOG_DEFAULT_LEVEL is WARN in release, and telling one build
+    // from another is the most useful thing the console ever says. (The old line here
+    // raised the level of tag "app_init", which no translation unit uses, so the
+    // banner it was meant to enable never printed.)
+    const esp_app_desc_t *desc = esp_app_get_description();
+    ESP_LOGW(TAG, "DeepSeek Monitor %s (built %s %s)", desc->version, desc->date, desc->time);
 
     // ---- power management ----
     //
@@ -683,10 +659,6 @@ extern "C" void app_main(void)
             xTaskCreatePinnedToCore(portal_task, "portal", 12288, nullptr, 3, nullptr, 0);
         }
 
-        // (The old "battery once a minute" counter here was dead code: it
-        // incremented and reset without gating anything. The battery is sampled
-        // with the rest of the UI every APP_UI_REFRESH_MS, which is already 60 s.)
-
         // Boot repair: a few seconds in, re-send the panel init once (see RlcdPanel::Repair).
         // An ST7305 that came up dark never accepts a frame and nothing else in the application
         // can tell, so this is the one chance to catch it. It is a no-op for a healthy panel.
@@ -716,9 +688,6 @@ extern "C" void app_main(void)
             if (wifi_get_status().connected) {
                 if (!clock_is_synced()) clock_sync_sntp(10000);
                 poll_balance();
-            } else {
-                snprintf(s_state.status, sizeof(s_state.status), "NO WIFI");
-                s_state.api_ok = false;
             }
         }
 
@@ -739,7 +708,6 @@ extern "C" void app_main(void)
             build_ui_model(&m);
             lvgl_lock();
             ui_update(&m);
-            ui_set_heartbeat(true);
             lvgl_unlock();
 
             // Battery diagnostics: one line per repaint when DEBUG_LOGS is on, so the

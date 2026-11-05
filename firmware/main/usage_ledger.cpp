@@ -22,7 +22,7 @@ static const char *KEY_TS      = "lastts";    // unix seconds of the last readin
 
 // Longest single interval that may be credited to the totals.
 //
-// A reading is taken every five minutes, so anything much longer means the device
+// A reading is taken every three minutes, so anything much longer means the device
 // was off or offline. The cap exists so an outage cannot dump unmonitored time into
 // the average and drag BURN down - but it must not be so tight that a genuine
 // outage distorts things the other way. Spend and time are credited separately
@@ -33,7 +33,7 @@ static const char *KEY_TS      = "lastts";    // unix seconds of the last readin
 #define LEDGER_MAX_INTERVAL_SEC (24 * 3600)
 
 // ---------------------------------------------------------------------------
-// Flash wear. Writing five integer keys every five minutes looks alarming, so the
+// Flash wear. Writing five integer keys every three minutes looks alarming, so the
 // budget is worked out here rather than guessed at.
 //
 //   IDF file-system-considerations.rst: NOR flash survives ~100,000 erase
@@ -45,8 +45,8 @@ static const char *KEY_TS      = "lastts";    // unix seconds of the last readin
 //
 //   5 keys per poll -> 126 / 5 = 25 polls to fill a page
 //   6 pages         -> 150 polls before a page must be erased
-//   288 polls/day   -> 1.92 erases/day -> ~701 erases/year
-//   100,000 / 701   -> ~143 years
+//   480 polls/day   -> 3.2 erases/day -> ~1168 erases/year
+//   100,000 / 1168  -> ~86 years
 //
 // So no RAM buffering or batching is needed at this cadence: the counter is the
 // bottleneck's opposite. That changes if the poll interval drops to seconds - at
@@ -55,7 +55,7 @@ static const char *KEY_TS      = "lastts";    // unix seconds of the last readin
 // persist-on-shutdown hook).
 // ---------------------------------------------------------------------------
 
-// Totals. spent_cf counts *down* in hundredths of a fen: 0.01 fen = 1e-4 CNY, so
+// Totals. spent_cf counts *up* in hundredths of a fen: 0.01 fen = 1e-4 CNY, so
 // a full fen is 100 units and the counter holds up to ~42949 CNY of spend in a
 // uint32 before wrapping - far beyond what this device will ever see.
 static uint32_t s_count    = 0;

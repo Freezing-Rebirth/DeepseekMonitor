@@ -83,7 +83,6 @@ bool holidays_year_refresh_due();
 void holidays_mark_year_refreshed();
 
 // Days currently held in the runtime year table, for logging.
-int holidays_runtime_year(int slot);   // slot 0 = newest
 
 // Make the next daily check ignore the caches. For bringing the feature up and for
 // support: a cached verdict covers a whole day, so a fix is otherwise unobservable
