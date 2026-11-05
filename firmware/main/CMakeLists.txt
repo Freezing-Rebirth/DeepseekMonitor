@@ -15,6 +15,7 @@ idf_component_register(
         "ui_widgets.cpp"
         "ui_fonts.cpp"
         "pricing.cpp"
+        "pricing_rules.cpp"
         "holidays_2026.cpp"
         "holidays_net.cpp"
         "clock_time.cpp"

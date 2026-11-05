@@ -188,6 +188,21 @@ a battery one: on the cell the chip sleeps normally, which a one-hour run with t
 repair counter at zero confirmed. NVS wear at this cadence is around 38 years, worked out in
 `firmware/main/usage_ledger.cpp`.
 
+## Tests
+
+The arithmetic that decides what the panel says is compiled and tested on the workstation,
+not on the board. Only files with no ESP-IDF dependency take part; anything that touches
+hardware stays out of this build.
+
+```sh
+cmake -S firmware/test -B firmware/test/build-tests
+cmake --build firmware/test/build-tests
+ctest --test-dir firmware/test/build-tests --output-on-failure
+```
+
+On Windows this needs a host gcc (WinLibs or MSYS2). The ESP-IDF toolchain is a
+cross-compiler and cannot produce host binaries.
+
 ## Layout
 
 ```

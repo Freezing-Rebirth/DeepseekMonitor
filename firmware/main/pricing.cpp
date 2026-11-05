@@ -1,11 +1,14 @@
 #include "pricing.h"
-#include "holidays.h"
+#include "pricing_rules.h"
 
 #include <stdio.h>
 #include <string.h>
 
-// Beijing time is UTC+8 with no daylight saving.
-#define BEIJING_OFFSET_SEC (8 * 3600)
+#include "holidays.h"
+
+// The arithmetic lives in pricing_rules.cpp, which has no ESP-IDF dependency and is
+// tested on the host. This file is the adapter: it supplies the calendar facts from
+// the holiday cache and maps the result onto the public enum.
 
 // ---------------------------------------------------------------------------
 // DeepSeek price table, CNY per 1M tokens.
@@ -41,16 +44,7 @@ price_pair_t pricing_lookup(price_model_t model, price_tier_t tier)
 
 void pricing_beijing_tm(time_t utc, struct tm *out)
 {
-    time_t bj = utc + BEIJING_OFFSET_SEC;
-    gmtime_r(&bj, out);
-}
-
-// Peak windows, minutes since midnight Beijing time.
-static bool in_peak_window(int hour, int minute)
-{
-    const int m = hour * 60 + minute;
-    return (m >= 9 * 60 && m < 12 * 60) ||   // 09:00-12:00
-           (m >= 14 * 60 && m < 18 * 60);    // 14:00-18:00
+    pricing_rules_beijing_tm(utc, out);
 }
 
 bool pricing_is_holiday(int year, int month, int day)
@@ -66,25 +60,32 @@ bool pricing_is_makeup_workday(int year, int month, int day)
     return holidays_is_makeup_workday(year, month, day);
 }
 
+// The calendar facts for one Beijing date. This and calendar_cb below are the only
+// places the tariff rules touch the holiday subsystem.
+static pricing_calendar_t calendar_for(const struct tm *bj)
+{
+    pricing_calendar_t c = {false, false};
+    const int year  = bj->tm_year + 1900;
+    const int month = bj->tm_mon + 1;
+    const int day   = bj->tm_mday;
+    c.is_makeup_workday = pricing_is_makeup_workday(year, month, day);
+    c.is_holiday        = pricing_is_holiday(year, month, day);
+    return c;
+}
+
+static pricing_calendar_t calendar_cb(const struct tm *bj, void *ctx)
+{
+    (void)ctx;
+    return calendar_for(bj);
+}
+
 price_state_t pricing_classify(time_t utc)
 {
     struct tm bj;
     pricing_beijing_tm(utc, &bj);
-
-    const int year  = bj.tm_year + 1900;
-    const int month = bj.tm_mon + 1;
-    const int day   = bj.tm_mday;
-
-    // Statutory holidays: off-peak all day.
-    if (pricing_is_holiday(year, month, day)) return PRICE_OFFPEAK;
-
-    // Weekends are off-peak unless the government made them working days.
-    const bool weekend = (bj.tm_wday == 0 || bj.tm_wday == 6);
-    if (weekend && !pricing_is_makeup_workday(year, month, day)) {
-        return PRICE_OFFPEAK;
-    }
-
-    return in_peak_window(bj.tm_hour, bj.tm_min) ? PRICE_PEAK : PRICE_OFFPEAK;
+    return (pricing_rules_classify(&bj, calendar_for(&bj)) == PRICING_WINDOW_PEAK)
+               ? PRICE_PEAK
+               : PRICE_OFFPEAK;
 }
 
 const char *pricing_state_name(price_state_t st)
@@ -92,26 +93,7 @@ const char *pricing_state_name(price_state_t st)
     return (st == PRICE_PEAK) ? "PEAK" : "OFF-PEAK";
 }
 
-// Advance one minute and ask again, up to a full week.
-//
-// The window has to be a week, not a day. From Saturday morning until the next
-// Monday 09:00 the state is OFF-PEAK throughout, so a 24-hour lookahead finds no
-// transition at all and the old code returned 0 - which the panel then rendered as
-// a switch happening right now. The schedule repeats weekly, so a week always
-// contains a transition and 10080 iterations is negligible on demand.
 int64_t pricing_seconds_to_next_change(time_t utc)
 {
-    const price_state_t now = pricing_classify(utc);
-
-    // Start at the next whole minute so we do not report 0 when we are one
-    // second away from a boundary.
-    time_t probe = utc - (utc % 60) + 60;
-
-    for (int i = 0; i < 7 * 24 * 60 + 2; i++) {
-        if (pricing_classify(probe) != now) {
-            return (int64_t)(probe - utc);
-        }
-        probe += 60;
-    }
-    return 0;
+    return pricing_rules_seconds_to_next_change(utc, calendar_cb, nullptr);
 }
