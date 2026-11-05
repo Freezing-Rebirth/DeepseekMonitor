@@ -19,6 +19,7 @@ idf_component_register(
         "pricing_rules.cpp"
         "holidays_2026.cpp"
         "holidays_net.cpp"
+        "holidays_parse.cpp"
         "clock_time.cpp"
         "usage_ledger.cpp"
         "ledger_math.cpp"

@@ -43,6 +43,14 @@ if(EXISTS ${CJSON_DIR}/cJSON.c)
                                                          ${CMAKE_CURRENT_SOURCE_DIR}/../main
                                                          ${CJSON_DIR})
     add_test(NAME test_balance_json COMMAND test_balance_json)
+
+    # The holiday parsers need cJSON for the same reason.
+    add_executable(test_holidays_parse test_holidays_parse.cpp
+                   ../main/holidays_parse.cpp ${CJSON_DIR}/cJSON.c)
+    target_include_directories(test_holidays_parse PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
+                                                          ${CMAKE_CURRENT_SOURCE_DIR}/../main
+                                                          ${CJSON_DIR})
+    add_test(NAME test_holidays_parse COMMAND test_holidays_parse)
 else()
     message(WARNING "cJSON not fetched yet: run `idf.py build` in firmware/ to enable test_balance_json")
 endif()
