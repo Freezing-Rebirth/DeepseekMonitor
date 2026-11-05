@@ -31,3 +31,18 @@ endfunction()
 add_suite(test_pricing_rules ../main/pricing_rules.cpp)
 add_suite(test_battery_curve ../main/battery_curve.cpp)
 add_suite(test_ledger_math ../main/ledger_math.cpp)
+
+# The balance parser is the first suite that needs a third-party library. cJSON comes from
+# the component manager, so `idf.py build` must have run once in firmware/ to fetch it; the
+# host build compiles the same sources the firmware does.
+set(CJSON_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../managed_components/espressif__cjson/cJSON)
+if(EXISTS ${CJSON_DIR}/cJSON.c)
+    add_executable(test_balance_json test_balance_json.cpp
+                   ../main/balance_json.cpp ${CJSON_DIR}/cJSON.c)
+    target_include_directories(test_balance_json PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
+                                                         ${CMAKE_CURRENT_SOURCE_DIR}/../main
+                                                         ${CJSON_DIR})
+    add_test(NAME test_balance_json COMMAND test_balance_json)
+else()
+    message(WARNING "cJSON not fetched yet: run `idf.py build` in firmware/ to enable test_balance_json")
+endif()

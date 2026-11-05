@@ -7,7 +7,7 @@
 #include <esp_log.h>
 #include <esp_http_client.h>
 #include <esp_crt_bundle.h>
-#include <cJSON.h>
+#include "balance_json.h"
 static const char *TAG = "dsapi";
 
 #define RESP_CAP 2048
@@ -37,58 +37,6 @@ static esp_err_t http_event_cb(esp_http_client_event_t *evt)
         break;
     }
     return ESP_OK;
-}
-
-static bool parse_balance_json(const char *json, size_t len, ds_balance_t *out)
-{
-    cJSON *root = cJSON_ParseWithLength(json, len);
-    if (!root) {
-        snprintf(out->error, sizeof(out->error), "JSON parse failed");
-        return false;
-    }
-
-    const cJSON *avail = cJSON_GetObjectItemCaseSensitive(root, "is_available");
-    if (cJSON_IsBool(avail)) {
-        out->is_available = cJSON_IsTrue(avail);
-    }
-
-    const cJSON *infos = cJSON_GetObjectItemCaseSensitive(root, "balance_infos");
-    if (!cJSON_IsArray(infos) || cJSON_GetArraySize(infos) == 0) {
-        snprintf(out->error, sizeof(out->error), "balance_infos missing");
-        cJSON_Delete(root);
-        return false;
-    }
-
-    // Prefer the CNY entry; fall back to the first one.
-    const cJSON *chosen = nullptr;
-    const cJSON *item = nullptr;
-    cJSON_ArrayForEach(item, infos) {
-        const cJSON *cur = cJSON_GetObjectItemCaseSensitive(item, "currency");
-        if (cJSON_IsString(cur) && strcmp(cur->valuestring, "CNY") == 0) {
-            chosen = item;
-            break;
-        }
-        if (!chosen) chosen = item;
-    }
-    if (!chosen) chosen = cJSON_GetArrayItem(infos, 0);
-
-    const cJSON *cur = cJSON_GetObjectItemCaseSensitive(chosen, "currency");
-    if (cJSON_IsString(cur)) {
-        snprintf(out->currency, sizeof(out->currency), "%s", cur->valuestring);
-    }
-
-    const cJSON *total = cJSON_GetObjectItemCaseSensitive(chosen, "total_balance");
-    const cJSON *grant = cJSON_GetObjectItemCaseSensitive(chosen, "granted_balance");
-    const cJSON *topup = cJSON_GetObjectItemCaseSensitive(chosen, "topped_up_balance");
-
-    // Values arrive as strings, e.g. "148.52".
-    if (cJSON_IsString(total)) out->total_balance     = strtof(total->valuestring, nullptr);
-    else if (cJSON_IsNumber(total)) out->total_balance = (float)total->valuedouble;
-    if (cJSON_IsString(grant)) out->granted_balance   = strtof(grant->valuestring, nullptr);
-    if (cJSON_IsString(topup)) out->topped_up_balance = strtof(topup->valuestring, nullptr);
-
-    cJSON_Delete(root);
-    return true;
 }
 
 ds_balance_t ds_query_balance(const char *api_key, int timeout_ms)
@@ -147,7 +95,7 @@ ds_balance_t ds_query_balance(const char *api_key, int timeout_ms)
         return out;
     }
 
-    if (!parse_balance_json(resp.buf, resp.len, &out)) {
+    if (!balance_json_parse(resp.buf, resp.len, &out)) {
         return out;
     }
 
