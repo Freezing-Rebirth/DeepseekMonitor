@@ -63,6 +63,16 @@ public:
     void WriteData(uint8_t data);
     void PushFrame();
 
+    // Send the controller's init sequence again and push the frame buffer.
+    //
+    // The ST7305 occasionally comes up dark after the init in Init() - no error, no log line,
+    // just a panel that never accepts a frame - and the only repair is to send the sequence
+    // again. main.cpp calls this a few seconds after the first paint: by then a panel that is
+    // going to be dark already is, the frame buffer holds the first paint, and re-sending costs
+    // about 12 ms of SPI. A panel that came up correctly is unaffected: the sequence is
+    // idempotent and the push just repeats the same frame.
+    void Repair();
+
     // Direct 1bpp frame-buffer writes (used by the bring-up self test).
     void SetPixel(uint16_t x, uint16_t y, bool white);
 

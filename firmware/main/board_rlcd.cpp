@@ -47,6 +47,13 @@ void RlcdPanel::WriteData(uint8_t data)
     ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(io_, -1, &data, 1));
 }
 
+void RlcdPanel::Repair()
+{
+    ESP_LOGW(TAG, "re-sending the panel init sequence (boot repair)");
+    ControllerInit();
+    PushFrame();
+}
+
 void RlcdPanel::PushFrame()
 {
     // Column address set (window used by the vendor reference driver)

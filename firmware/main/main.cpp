@@ -544,6 +544,7 @@ extern "C" void app_main(void)
     TickType_t last_ui = xTaskGetTickCount();
     TickType_t last_api = xTaskGetTickCount();
     TickType_t last_hb = xTaskGetTickCount();
+    const TickType_t boot_ticks = xTaskGetTickCount();
     price_state_t last_price_state = pricing_classify(model.now);
 
     while (true) {
@@ -685,6 +686,24 @@ extern "C" void app_main(void)
         // (The old "battery once a minute" counter here was dead code: it
         // incremented and reset without gating anything. The battery is sampled
         // with the rest of the UI every APP_UI_REFRESH_MS, which is already 60 s.)
+
+        // Boot repair: a few seconds in, re-send the panel init once (see RlcdPanel::Repair).
+        // An ST7305 that came up dark never accepts a frame and nothing else in the application
+        // can tell, so this is the one chance to catch it. It is a no-op for a healthy panel.
+        {
+            static bool panel_repaired = false;
+            if (!panel_repaired && (xTaskGetTickCount() - boot_ticks) >= pdMS_TO_TICKS(4000)) {
+                panel_repaired = true;
+                lvgl_lock();
+                s_panel.Repair();
+                lvgl_unlock();
+                ui_model_t m;
+                build_ui_model(&m);
+                lvgl_lock();
+                ui_update(&m);
+                lvgl_unlock();
+            }
+        }
 
         if (api_due) {
             last_api = xTaskGetTickCount();
