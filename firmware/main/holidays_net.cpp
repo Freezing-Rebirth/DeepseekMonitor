@@ -46,10 +46,22 @@ static const char *TAG = "holidays";
 #define DAY_MAKEUP   3
 #define DAY_UNKNOWN -1
 
+// Which yearly-payload shape a source answers with. It used to be inferred by matching
+// substrings of the source name, so adding a host whose name happened to contain
+// "chinese-days" silently selected that parser - and a rename would have broken a working
+// source with no compile error. The shape belongs in the table.
+typedef enum {
+    HOL_PARSER_DAY_ONLY = 0,     // no yearly endpoint
+    HOL_PARSER_TIMOR,
+    HOL_PARSER_XIAOAI,
+    HOL_PARSER_CHINESE_DAYS,
+} hol_parser_t;
+
 typedef struct {
     const char *name;
     const char *daily_fmt;   // %04d-%02d-%02d
     const char *year_fmt;    // %d; null for a day-only service
+    hol_parser_t parser;
 } hol_source_t;
 
 // Ordered so the reachable sources are tried first.
@@ -70,26 +82,31 @@ static const hol_source_t kSources[] = {
         "dreace",
         "https://holiday.dreace.top/%04d-%02d-%02d",
         nullptr,        // day-only service
+        HOL_PARSER_DAY_ONLY,
     },
     {
         "timor.tech",
         "https://timor.tech/api/holiday/info/%04d-%02d-%02d",
         "https://timor.tech/api/holiday/year/%d",
+        HOL_PARSER_TIMOR,
     },
     {
         "xiaoai.me",
         "https://publicapi.xiaoai.me/holiday/day?date=%04d-%02d-%02d",
         "https://publicapi.xiaoai.me/holiday/year?date=%d",
+        HOL_PARSER_XIAOAI,
     },
     {
         "chinese-days/jsdelivr",
         nullptr,
         "https://cdn.jsdelivr.net/npm/chinese-days/dist/years/%d.json",
+        HOL_PARSER_CHINESE_DAYS,
     },
     {
         "chinese-days/fastly",
         nullptr,
         "https://fastly.jsdelivr.net/npm/chinese-days/dist/years/%d.json",
+        HOL_PARSER_CHINESE_DAYS,
     },
 };
 #define HOL_SOURCE_COUNT (sizeof(kSources) / sizeof(kSources[0]))
@@ -689,13 +706,21 @@ bool holidays_runtime_fetch_year(int year)
         if (!resp) continue;
 
         hol_year_t parsed;
-        bool ok;
-        if (strcmp(s->name, "xiaoai.me") == 0) {
-            ok = parse_year_xiaoai(resp->buf, resp->len, year, &parsed);
-        } else if (strncmp(s->name, "chinese-days", 12) == 0) {
-            ok = parse_year_chinese_days(resp->buf, resp->len, year, &parsed);
-        } else {
-            ok = parse_year_timor(resp->buf, resp->len, year, &parsed);
+        bool ok = false;
+        switch (s->parser) {
+            case HOL_PARSER_XIAOAI:
+                ok = parse_year_xiaoai(resp->buf, resp->len, year, &parsed);
+                break;
+            case HOL_PARSER_CHINESE_DAYS:
+                ok = parse_year_chinese_days(resp->buf, resp->len, year, &parsed);
+                break;
+            case HOL_PARSER_TIMOR:
+                ok = parse_year_timor(resp->buf, resp->len, year, &parsed);
+                break;
+            case HOL_PARSER_DAY_ONLY:
+            default:
+                ok = false;     // the guard above already skips these
+                break;
         }
         free(resp);
         if (!ok) {
