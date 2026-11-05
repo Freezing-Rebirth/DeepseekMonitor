@@ -1,12 +1,12 @@
 #include "battery.h"
 #include "battery_curve.h"
+#include "store.h"
 #include "board_rlcd.h"
 
 #include <esp_log.h>
 #include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
-#include <nvs.h>
 #include <esp_adc/adc_oneshot.h>
 #include <esp_adc/adc_cali.h>
 #include <esp_adc/adc_cali_scheme.h>
@@ -51,10 +51,6 @@ static int  s_stored_pct   = 0;
 // display a number does not keep its own copy - it used to, and it went stale.
 static battery_reading_t s_last = {};
 
-static const char *BAT_NVS_NS  = "dsbat";
-static const char *KEY_PERCENT = "pct";
-static const char *KEY_MV      = "mv";     // cell millivolts, divider undone
-
 // How many times the ADC unit has had to be re-created since boot.
 //
 // With light sleep enabled on this board the first sleep breaks the conversion path and
@@ -71,22 +67,18 @@ static void persist_if_changed(const battery_reading_t &r)
 {
     if (!r.valid) return;
 
-    nvs_handle_t h;
-    if (nvs_open(BAT_NVS_NS, NVS_READWRITE, &h) != ESP_OK) return;
+    uint8_t  stored_pct = 0;
+    uint32_t stored_mv  = 0;
+    const bool have = store_battery_load(&stored_pct, &stored_mv);
 
-    uint8_t stored_pct = 0;
-    const bool have = (nvs_get_u8(h, KEY_PERCENT, &stored_pct) == ESP_OK);
+    // The cell voltage sits on a plateau for hours and the ADC wanders by a count or
+    // two, so an unconditional write every repaint would turn a rounding wobble into
+    // flash traffic that carries no information.
     if (!have || stored_pct != (uint8_t)r.percent) {
-        // The cell voltage sits on a plateau for hours and the ADC wanders by a
-        // count or two, so an unconditional write every minute would turn a
-        // rounding wobble into flash traffic that carries no information.
-        nvs_set_u8(h, KEY_PERCENT, (uint8_t)r.percent);
-        nvs_set_u32(h, KEY_MV, (uint32_t)(r.volts * 1000.0f + 0.5f));
-        nvs_commit(h);
+        store_battery_save((uint8_t)r.percent, (uint32_t)(r.volts * 1000.0f + 0.5f));
         ESP_LOGI(TAG, "stored %d%% (%.3f V) for the next boot",
                  r.percent, (double)r.volts);
     }
-    nvs_close(h);
 }
 
 bool battery_restore(battery_reading_t *out)
@@ -94,15 +86,9 @@ bool battery_restore(battery_reading_t *out)
     if (!out) return false;
     *out = {};
 
-    nvs_handle_t h;
-    if (nvs_open(BAT_NVS_NS, NVS_READONLY, &h) != ESP_OK) return false;
-
     uint8_t  pct = 0;
     uint32_t mv  = 0;
-    const bool ok = (nvs_get_u8(h, KEY_PERCENT, &pct) == ESP_OK) &&
-                    (nvs_get_u32(h, KEY_MV, &mv) == ESP_OK);
-    nvs_close(h);
-    if (!ok) return false;
+    if (!store_battery_load(&pct, &mv)) return false;
 
     out->valid   = true;
     out->percent = (int)pct;

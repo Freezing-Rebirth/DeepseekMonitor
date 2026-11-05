@@ -1,4 +1,5 @@
 #include "holidays.h"
+#include "store.h"
 #include "clock_time.h"
 #include "pricing.h"
 #include "wifi_prov.h"
@@ -14,7 +15,6 @@
 #include <esp_log.h>
 #include <esp_http_client.h>
 #include <esp_crt_bundle.h>
-#include <nvs.h>
 #include <cJSON.h>
 
 static const char *TAG = "holidays";
@@ -130,8 +130,6 @@ typedef struct {
 
 #define HOL_BLOB_MAGIC   0x484F4C33u   // "HOL3"
 #define HOL_BLOB_VERSION 3
-#define HOL_NVS_NS       "dscfg"
-#define HOL_NVS_KEY      "holidays"
 
 #define HOL_REFRESH_INTERVAL_SEC (24 * 3600)        // daily
 #define HOL_YEAR_INTERVAL_SEC    (30 * 24 * 3600)   // monthly
@@ -166,28 +164,22 @@ static void blob_load()
     if (s_loaded) return;
     blob_defaults(&s_blob);
 
-    nvs_handle_t h;
-    if (nvs_open(HOL_NVS_NS, NVS_READONLY, &h) == ESP_OK) {
-        hol_blob_t tmp;
-        size_t len = sizeof(tmp);
-        if (nvs_get_blob(h, HOL_NVS_KEY, &tmp, &len) == ESP_OK &&
-            tmp.magic == HOL_BLOB_MAGIC && tmp.version == HOL_BLOB_VERSION) {
-            s_blob = tmp;
-        } else {
-            ESP_LOGI(TAG, "no usable cached arrangement; using the compiled table");
-        }
-        nvs_close(h);
+    // The cache used to live in "dscfg", the namespace the WiFi credentials occupy. It
+    // has its own now (store.cpp), so the two can no longer be confused, and a device
+    // upgrading in place simply refetches once.
+    hol_blob_t tmp;
+    if (store_holidays_load(&tmp, sizeof(tmp)) &&
+        tmp.magic == HOL_BLOB_MAGIC && tmp.version == HOL_BLOB_VERSION) {
+        s_blob = tmp;
+    } else {
+        ESP_LOGI(TAG, "no usable cached arrangement; using the compiled table");
     }
     s_loaded = true;
 }
 
 static void blob_save()
 {
-    nvs_handle_t h;
-    if (nvs_open(HOL_NVS_NS, NVS_READWRITE, &h) != ESP_OK) return;
-    nvs_set_blob(h, HOL_NVS_KEY, &s_blob, sizeof(s_blob));
-    nvs_commit(h);
-    nvs_close(h);
+    store_holidays_save(&s_blob, sizeof(s_blob));
 }
 
 void holidays_runtime_init()

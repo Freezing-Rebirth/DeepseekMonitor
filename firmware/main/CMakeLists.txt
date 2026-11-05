@@ -24,6 +24,7 @@ idf_component_register(
         "ledger_math.cpp"
         "deepseek_api.cpp"
         "balance_json.cpp"
+        "store.cpp"
         "wifi_prov.cpp"
         "wifi_portal.cpp"
         "app_config_store.cpp"

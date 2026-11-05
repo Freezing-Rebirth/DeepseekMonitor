@@ -1,24 +1,12 @@
 #include "usage_ledger.h"
 #include "ledger_math.h"
+#include "store.h"
 #include "debug_config.h"
 
 #include <string.h>
 #include <esp_log.h>
-#include <nvs.h>
 
 static const char *TAG = "ledger";
-
-static const char *LEDGER_NVS_NS = "dsledger";
-
-// Keys. "count" / "spent" / "elapsed" / "ref" are integers; NVS stores each as a
-// single entry, which wear-levelling handles far better than the blob this used
-// to write. The old "samples" blob is left untouched so a device upgrading in
-// place does not fail to open the namespace; it is simply no longer read.
-static const char *KEY_COUNT   = "count";
-static const char *KEY_SPENT   = "spent";     // 0.01 fen units
-static const char *KEY_ELAPSED = "elapsed";   // seconds
-static const char *KEY_REF     = "ref";       // 0.01 fen units
-static const char *KEY_TS      = "lastts";    // unix seconds of the last reading
 
 // ---------------------------------------------------------------------------
 // Flash wear. Writing five integer keys every three minutes looks alarming, so the
@@ -51,26 +39,10 @@ static int64_t s_last_diag_ts = 0;
 
 static bool s_loaded = false;
 
-static void load_u32(nvs_handle_t h, const char *key, uint32_t *out)
-{
-    uint32_t v = 0;
-    if (nvs_get_u32(h, key, &v) == ESP_OK) {
-        *out = v;
-    }
-}
-
 static void ledger_load()
 {
     s_totals = (ledger_totals_t){};
-    nvs_handle_t h;
-    if (nvs_open(LEDGER_NVS_NS, NVS_READONLY, &h) == ESP_OK) {
-        load_u32(h, KEY_COUNT,   &s_totals.count);
-        load_u32(h, KEY_SPENT,   &s_totals.spent_cf);
-        load_u32(h, KEY_ELAPSED, &s_totals.elapsed_sec);
-        load_u32(h, KEY_REF,     &s_totals.ref_cf);
-        load_u32(h, KEY_TS,      &s_totals.last_ts);
-        nvs_close(h);
-    }
+    store_ledger_load(&s_totals);
     s_loaded = true;
     ESP_LOGI(TAG, "loaded totals: count=%u spent=%.4f CNY over %us (last ts %u)",
              (unsigned)s_totals.count, (double)ledger_cf_to_cny(s_totals.spent_cf),
@@ -79,15 +51,7 @@ static void ledger_load()
 
 static void ledger_save()
 {
-    nvs_handle_t h;
-    if (nvs_open(LEDGER_NVS_NS, NVS_READWRITE, &h) != ESP_OK) return;
-    nvs_set_u32(h, KEY_COUNT,   s_totals.count);
-    nvs_set_u32(h, KEY_SPENT,   s_totals.spent_cf);
-    nvs_set_u32(h, KEY_ELAPSED, s_totals.elapsed_sec);
-    nvs_set_u32(h, KEY_REF,     s_totals.ref_cf);
-    nvs_set_u32(h, KEY_TS,      s_totals.last_ts);
-    nvs_commit(h);
-    nvs_close(h);
+    store_ledger_save(&s_totals);
 }
 
 void ledger_init()
