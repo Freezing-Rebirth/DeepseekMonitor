@@ -29,3 +29,4 @@ function(add_suite name)
 endfunction()
 
 add_suite(test_pricing_rules ../main/pricing_rules.cpp)
+add_suite(test_battery_curve ../main/battery_curve.cpp)

@@ -11,6 +11,7 @@ idf_component_register(
         "pricing_selftest.cpp"
         "frame_dump.cpp"
         "battery.cpp"
+        "battery_curve.cpp"
         "ui.cpp"
         "ui_widgets.cpp"
         "ui_fonts.cpp"
