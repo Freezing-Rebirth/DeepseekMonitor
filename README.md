@@ -203,6 +203,15 @@ ctest --test-dir firmware/test/build-tests --output-on-failure
 On Windows this needs a host gcc (WinLibs or MSYS2). The ESP-IDF toolchain is a
 cross-compiler and cannot produce host binaries.
 
+## Vocabulary and decisions
+
+[`GLOSSARY.md`](GLOSSARY.md) defines the terms this project uses, and the screens, the
+ledger and the code all use those definitions.
+
+Decisions that were not obvious at the time are recorded in [`docs/adr/`](docs/adr): why
+NVS has one owner, why the arithmetic is tested on the workstation, why the panel only ever
+sees a view model, and why a dark panel gets a blind init re-send.
+
 ## Layout
 
 ```
